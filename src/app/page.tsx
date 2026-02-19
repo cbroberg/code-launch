@@ -1,11 +1,11 @@
+import Link from "next/link";
 import { db } from "@/drizzle";
 import { apps } from "@/drizzle/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppsTable } from "@/components/apps-table";
 import { ScanButton } from "@/components/scan-button";
 import { VacantPortBadge } from "@/components/vacant-port-badge";
-import { isNotNull } from "drizzle-orm";
-import { Database, Globe, Server } from "lucide-react";
+import { Database, Globe, Server, BookOpen } from "lucide-react";
 
 export default async function Home() {
   const allApps = await db.select().from(apps).orderBy(apps.port);
@@ -28,6 +28,13 @@ export default async function Home() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <Link
+              href="/instructions"
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <BookOpen className="h-4 w-4" />
+              API docs
+            </Link>
             <VacantPortBadge />
             <ScanButton />
           </div>
