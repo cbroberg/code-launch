@@ -1,0 +1,249 @@
+openapi: 3.1.0
+info:
+  title: App Ports DB API
+  description: Local port registry for development projects
+  version: 1.0.0
+servers:
+  - url: http://localhost:4200
+    description: Local development server
+
+paths:
+  /api/apps:
+    get:
+      summary: List all apps
+      operationId: listApps
+      responses:
+        "200":
+          description: List of apps ordered by port
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/App"
+    post:
+      summary: Create a new app
+      operationId: createApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAppInput"
+      responses:
+        "201":
+          description: Created app
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/App"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Port already taken
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/apps/{id}:
+    patch:
+      summary: Update an app
+      operationId: updateApp
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAppInput"
+      responses:
+        "200":
+          description: Updated app
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/App"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: App not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Port conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete an app
+      operationId: deleteApp
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "404":
+          description: App not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/vacant-port:
+    get:
+      summary: Get first available port >= 3000
+      operationId: getVacantPort
+      responses:
+        "200":
+          description: First port not in the registry
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - port
+                properties:
+                  port:
+                    type: integer
+                    example: 3001
+
+  /api/scan:
+    post:
+      summary: Scan /Users/cb/Apps and upsert discovered projects
+      operationId: scanApps
+      responses:
+        "200":
+          description: Scan results
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - discovered
+                  - inserted
+                  - updated
+                properties:
+                  discovered:
+                    type: integer
+                    description: Number of projects found on disk
+                  inserted:
+                    type: integer
+                    description: Number of new apps added to DB
+                  updated:
+                    type: integer
+                    description: Number of existing apps updated
+
+components:
+  schemas:
+    App:
+      type: object
+      required:
+        - id
+        - name
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        githubName:
+          type: string
+          nullable: true
+          example: cbroberg/my-app
+        githubUrl:
+          type: string
+          nullable: true
+          example: https://github.com/cbroberg/my-app
+        port:
+          type: integer
+          nullable: true
+          example: 3000
+        localPath:
+          type: string
+          nullable: true
+          example: /Users/cb/Apps/cbroberg/my-app
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateAppInput:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+        githubName:
+          type: string
+        githubUrl:
+          type: string
+          format: uri
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        localPath:
+          type: string
+
+    UpdateAppInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        githubName:
+          type: string
+          nullable: true
+        githubUrl:
+          type: string
+          format: uri
+          nullable: true
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          nullable: true
+        localPath:
+          type: string
+          nullable: true
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
