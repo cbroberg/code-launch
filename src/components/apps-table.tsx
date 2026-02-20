@@ -14,7 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EditAppDialog } from "./edit-app-dialog";
-import { Pencil, Trash2, ExternalLink, FolderOpen, Filter } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Pencil, Trash2, ExternalLink, FolderOpen, Filter, Search, X } from "lucide-react";
 import type { App } from "@/drizzle/schema";
 
 interface AppsTableProps {
@@ -25,8 +26,17 @@ export function AppsTable({ apps }: AppsTableProps) {
   const router = useRouter();
   const [editingApp, setEditingApp] = useState<App | null>(null);
   const [hideWithoutPort, setHideWithoutPort] = useState(true);
+  const [query, setQuery] = useState("");
 
-  const visible = hideWithoutPort ? apps.filter((a) => a.port !== null) : apps;
+  const q = query.trim().toLowerCase();
+  const visible = apps
+    .filter((a) => !hideWithoutPort || a.port !== null)
+    .filter((a) =>
+      !q ||
+      a.name.toLowerCase().includes(q) ||
+      (a.githubName ?? "").toLowerCase().includes(q) ||
+      (a.localPath ?? "").toLowerCase().includes(q)
+    );
 
   async function handleDelete(app: App) {
     if (!confirm(`Delete "${app.name}"?`)) return;
@@ -48,19 +58,35 @@ export function AppsTable({ apps }: AppsTableProps) {
     <>
       {/* Filter bar */}
       <div className="flex items-center gap-2 px-4 py-3 border-b">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name, repo or path…"
+            className="h-7 pl-8 pr-7 text-xs"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
         <Button
           size="sm"
           variant={hideWithoutPort ? "default" : "outline"}
           onClick={() => setHideWithoutPort((v) => !v)}
-          className="gap-1.5 h-7 text-xs"
+          className="gap-1.5 h-7 text-xs shrink-0"
         >
           <Filter className="h-3 w-3" />
-          {hideWithoutPort ? "Showing with port only" : "Show all"}
+          {hideWithoutPort ? "With port only" : "Show all"}
         </Button>
-        {withoutPort > 0 && (
-          <span className="text-xs text-muted-foreground">
+        {withoutPort > 0 && !hideWithoutPort && (
+          <span className="text-xs text-muted-foreground shrink-0">
             {withoutPort} without port
-            {hideWithoutPort ? " hidden" : ""}
           </span>
         )}
       </div>
