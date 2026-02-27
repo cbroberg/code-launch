@@ -64,13 +64,18 @@ curl -X POST http://localhost:4200/api/system/autostart \
 
 This creates a macOS LaunchAgent at:
 ```
-~/Library/LaunchAgents/com.cbroberg.code-launch.plist
+~/Library/LaunchAgents/com.cbroberg.code-launcher.plist
+```
+
+Inspect it:
+```bash
+cat ~/Library/LaunchAgents/com.cbroberg.code-launcher.plist
 ```
 
 Logs are written to:
 ```
-~/Library/Logs/code-launch/stdout.log
-~/Library/Logs/code-launch/stderr.log
+~/Library/Logs/code-launcher/stdout.log
+~/Library/Logs/code-launcher/stderr.log
 ```
 
 ### Disable auto-start (via UI)
@@ -87,8 +92,8 @@ curl -X POST http://localhost:4200/api/system/autostart \
   -d '{"action": "uninstall"}'
 
 # Or directly via launchctl:
-launchctl unload ~/Library/LaunchAgents/com.cbroberg.code-launch.plist
-rm ~/Library/LaunchAgents/com.cbroberg.code-launch.plist
+launchctl unload ~/Library/LaunchAgents/com.cbroberg.code-launcher.plist
+rm ~/Library/LaunchAgents/com.cbroberg.code-launcher.plist
 ```
 
 ---
