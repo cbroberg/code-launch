@@ -477,9 +477,25 @@ function scanDir(dir: string, depth: number, results: ScannedApp[]): void {
 }
 
 export function scanApps(): ScannedApp[] {
-  const results: ScannedApp[] = [];
-  scanDir(SCAN_ROOT, 0, results);
-  return results;
+  const rawResults: ScannedApp[] = [];
+  scanDir(SCAN_ROOT, 0, rawResults);
+
+  // Index by path for quick lookup
+  const byPath = new Map<string, ScannedApp>();
+  for (const app of rawResults) byPath.set(app.localPath, app);
+
+  // Sub-packages: their monorepo root is also in the results.
+  // Merge their port into the root and discard the sub-package — root always wins.
+  const toRemove = new Set<string>();
+  for (const app of rawResults) {
+    const root = findMonorepoRoot(app.localPath);
+    if (!root || !byPath.has(root)) continue;
+    const rootApp = byPath.get(root)!;
+    if (!rootApp.port && app.port) rootApp.port = app.port;
+    toRemove.add(app.localPath);
+  }
+
+  return rawResults.filter(a => !toRemove.has(a.localPath));
 }
 
 /**
@@ -536,6 +552,16 @@ export function writePortToApp(localPath: string, newPort: number): string[] {
             .replace(/\bPORT=\d{4,5}\b/, `PORT=${newPort}`);
           if (replaced !== val) {
             pkg.scripts[key] = replaced;
+            changed = true;
+          }
+        }
+        // If dev script has no port flag at all, append -p {port}
+        const devKey = ["dev", "develop", "start"].find(k => pkg.scripts[k]);
+        if (!changed && devKey) {
+          const devScript = String(pkg.scripts[devKey]);
+          // Only add if it looks like a dev server command (next/vite/bun/node)
+          if (/\b(next|vite|bun|node|tsx|ts-node)\b/.test(devScript)) {
+            pkg.scripts[devKey] = devScript + ` -p ${newPort}`;
             changed = true;
           }
         }

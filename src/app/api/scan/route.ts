@@ -132,6 +132,21 @@ export async function POST() {
     }
   }
 
+  // Remove sub-package entries that are no longer in scan results
+  // (e.g. monorepo sub-packages that got merged into root)
+  const scannedPaths = new Set(scanned.map(a => a.localPath).filter(Boolean));
+  const allDbApps = await db.select({ id: apps.id, localPath: apps.localPath, status: apps.status }).from(apps);
+  let deleted = 0;
+  for (const dbApp of allDbApps) {
+    if (!dbApp.localPath || scannedPaths.has(dbApp.localPath)) continue;
+    // Only delete if it's a sub-directory of a known scanned root (not a manually-added unrelated app)
+    const isSubPackage = scanned.some(root => root.localPath && dbApp.localPath!.startsWith(root.localPath + "/"));
+    if (isSubPackage && dbApp.status !== "running") {
+      await db.delete(apps).where(eq(apps.id, dbApp.id));
+      deleted++;
+    }
+  }
+
   // Probe listening ports to detect externally running processes
   const listening = getSystemListeningPorts();
   const now2 = new Date().toISOString();
@@ -154,6 +169,7 @@ export async function POST() {
     discovered: scanned.length,
     inserted,
     updated,
+    deleted,
     probeUpdated,
     portAssigned,
   });

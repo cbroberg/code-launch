@@ -14,6 +14,9 @@ export async function register() {
   // Snapshot of ports already in use (includes this server's own port)
   const listening = getSystemListeningPorts();
 
+  // Our own port — we're the server, so we know we're running
+  const ownPort = parseInt(process.env.PORT || "4200", 10);
+
   // Start all autoBoot apps that have a devCommand
   const bootApps = await db
     .select()
@@ -23,8 +26,18 @@ export async function register() {
   for (const app of bootApps) {
     if (!app.devCommand || !app.localPath) continue;
 
-    // Port in use — HTTP-verify before marking as running
     if (app.port && listening.has(app.port)) {
+      // Own port: server is us, mark running immediately (HTTP not available yet)
+      if (app.port === ownPort) {
+        await db
+          .update(apps)
+          .set({ status: "running", updatedAt: new Date().toISOString() })
+          .where(eq(apps.id, app.id));
+        console.log(`[auto-boot] "${app.name}" is this server — marked running`);
+        continue;
+      }
+
+      // Other ports: HTTP-verify to avoid false positives
       let up = false;
       try {
         await fetch(`http://127.0.0.1:${app.port}/`, {
@@ -41,16 +54,28 @@ export async function register() {
           .where(eq(apps.id, app.id));
         console.log(`[auto-boot] "${app.name}" verified on port ${app.port} — marked running`);
       } else {
-        // Port busy but not responding — fall through and try to start normally
-        console.log(`[auto-boot] "${app.name}" port ${app.port} not responding — will start fresh`);
+        console.log(`[auto-boot] "${app.name}" port ${app.port} not responding — starting fresh`);
+        // Fall through to startProcess below
+        await new Promise(r => setTimeout(r, 500));
+        startProcess(app.id).catch(err => {
+          console.error(`[auto-boot] Failed to start "${app.name}":`, err.message);
+        });
       }
       continue;
     }
 
-    // Stagger starts 500ms apart to avoid port collisions
+    // Port not in use — start it
     await new Promise(r => setTimeout(r, 500));
     startProcess(app.id).catch(err => {
       console.error(`[auto-boot] Failed to start "${app.name}":`, err.message);
     });
   }
+
+  // Delayed probe: after server is fully ready, fix any remaining incorrect statuses
+  setTimeout(async () => {
+    try {
+      await fetch(`http://127.0.0.1:${ownPort}/api/probe`, { method: "POST" });
+      console.log("[auto-boot] Post-startup probe complete");
+    } catch { /* ignore */ }
+  }, 8000);
 }

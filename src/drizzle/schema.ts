@@ -14,6 +14,7 @@ export const apps = sqliteTable("apps", {
   devCommand: text("dev_command"),
   projectType: text("project_type"), // "web-app" | "api-server" | "monorepo" | "library" | "docker" | "batch"
   // Process management
+  favorite: integer("favorite", { mode: "boolean" }).default(false),
   autoBoot: integer("auto_boot", { mode: "boolean" }).default(false),
   status: text("status").default("stopped"), // "stopped" | "starting" | "running" | "error"
   pid: integer("pid"),
