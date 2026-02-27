@@ -3,6 +3,7 @@ import { db } from "@/drizzle";
 import { apps } from "@/drizzle/schema";
 import { updateAppSchema } from "@/lib/validations";
 import { writePortToApp } from "@/lib/scanner";
+import { gitCommitPortChange } from "@/lib/git-ops";
 import { eq } from "drizzle-orm";
 
 export async function PATCH(
@@ -52,12 +53,16 @@ export async function PATCH(
 
   // Write port back to underlying project files if port changed and localPath is known
   let writtenFiles: string[] = [];
+  let gitResult: { committed: boolean; pushed: boolean } | null = null;
   const portChanged = data.port !== undefined && data.port !== existing.port;
   if (portChanged && data.port && existing.localPath) {
     writtenFiles = writePortToApp(existing.localPath, data.port);
+    if (writtenFiles.length > 0) {
+      gitResult = gitCommitPortChange(existing.localPath, writtenFiles, data.port);
+    }
   }
 
-  return NextResponse.json({ ...updated, writtenFiles });
+  return NextResponse.json({ ...updated, writtenFiles, gitResult });
 }
 
 export async function DELETE(

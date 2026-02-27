@@ -3,8 +3,8 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "App Ports DB",
-  description: "Local port registry for development projects",
+  title: "Code Launcher",
+  description: "Start, stop og overvåg lokale dev-projekter",
 };
 
 export default function RootLayout({
@@ -13,7 +13,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="da" suppressHydrationWarning>
       <body>
         <Providers>{children}</Providers>
       </body>

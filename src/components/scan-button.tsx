@@ -4,10 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ScanLine, Loader2 } from "lucide-react";
+import { ScanLine, Loader2, RefreshCw } from "lucide-react";
 
 export function ScanButton() {
   const [scanning, setScanning] = useState(false);
+  const [probing, setProbing] = useState(false);
   const router = useRouter();
 
   async function handleScan() {
@@ -27,14 +28,44 @@ export function ScanButton() {
     }
   }
 
+  async function handleProbe() {
+    setProbing(true);
+    try {
+      const res = await fetch("/api/probe", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Probe failed");
+      toast.success(`Status refreshed: ${data.updated} updated`);
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Probe failed");
+    } finally {
+      setProbing(false);
+    }
+  }
+
   return (
-    <Button onClick={handleScan} disabled={scanning} variant="outline">
-      {scanning ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <ScanLine className="h-4 w-4" />
-      )}
-      {scanning ? "Scanning..." : "Scan Apps"}
-    </Button>
+    <div className="flex items-center gap-2">
+      <Button
+        onClick={handleProbe}
+        disabled={probing || scanning}
+        variant="ghost"
+        size="sm"
+        title="Refresh running status"
+      >
+        {probing ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <RefreshCw className="h-4 w-4" />
+        )}
+      </Button>
+      <Button onClick={handleScan} disabled={scanning || probing} variant="outline">
+        {scanning ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <ScanLine className="h-4 w-4" />
+        )}
+        {scanning ? "Scanning..." : "Scan Apps"}
+      </Button>
+    </div>
   );
 }

@@ -14,12 +14,124 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EditAppDialog } from "./edit-app-dialog";
+import { ProcessControls } from "./process-controls";
 import { Input } from "@/components/ui/input";
 import { Pencil, Trash2, ExternalLink, FolderOpen, Filter, Search, X } from "lucide-react";
 import type { App } from "@/drizzle/schema";
 
 interface AppsTableProps {
   apps: App[];
+}
+
+function StatusBadge({ status }: { status: string | null }) {
+  if (!status || status === "stopped") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="h-2 w-2 rounded-full bg-neutral-300" />
+        Stopped
+      </span>
+    );
+  }
+  if (status === "starting") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-yellow-600">
+        <span className="h-2 w-2 rounded-full bg-yellow-400 animate-pulse" />
+        Starting
+      </span>
+    );
+  }
+  if (status === "running") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-green-600">
+        <span className="h-2 w-2 rounded-full bg-green-500" />
+        Running
+      </span>
+    );
+  }
+  if (status === "error") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-red-600">
+        <span className="h-2 w-2 rounded-full bg-red-500" />
+        Error
+      </span>
+    );
+  }
+  return null;
+}
+
+function FrameworkBadge({ framework }: { framework: string | null }) {
+  if (!framework) return null;
+
+  const colors: Record<string, string> = {
+    nextjs: "bg-black text-white border-black",
+    hono: "bg-orange-100 text-orange-800 border-orange-200",
+    express: "bg-neutral-100 text-neutral-700 border-neutral-200",
+    vite: "bg-purple-100 text-purple-800 border-purple-200",
+    remix: "bg-blue-100 text-blue-800 border-blue-200",
+    sveltekit: "bg-red-100 text-red-800 border-red-200",
+    astro: "bg-indigo-100 text-indigo-800 border-indigo-200",
+    fastify: "bg-teal-100 text-teal-800 border-teal-200",
+  };
+
+  const labels: Record<string, string> = {
+    nextjs: "Next.js",
+    hono: "Hono",
+    express: "Express",
+    vite: "Vite",
+    remix: "Remix",
+    sveltekit: "SvelteKit",
+    astro: "Astro",
+    fastify: "Fastify",
+  };
+
+  const cls = colors[framework] || "bg-neutral-100 text-neutral-700 border-neutral-200";
+  return (
+    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${cls}`}>
+      {labels[framework] || framework}
+    </Badge>
+  );
+}
+
+function RuntimeBadge({ runtime, pm }: { runtime: string | null; pm: string | null }) {
+  const parts: string[] = [];
+  if (runtime && runtime !== "node") parts.push(runtime);
+  if (pm) parts.push(pm);
+  if (parts.length === 0) return null;
+
+  return (
+    <span className="text-[10px] text-muted-foreground font-mono">
+      {parts.join(" · ")}
+    </span>
+  );
+}
+
+function ProjectTypeBadge({ type }: { type: string | null }) {
+  if (!type) return null;
+
+  const colors: Record<string, string> = {
+    "web-app": "bg-blue-50 text-blue-700 border-blue-200",
+    "api-server": "bg-green-50 text-green-700 border-green-200",
+    monorepo: "bg-violet-50 text-violet-700 border-violet-200",
+    library: "bg-amber-50 text-amber-700 border-amber-200",
+    docker: "bg-sky-50 text-sky-700 border-sky-200",
+    batch: "bg-neutral-50 text-neutral-600 border-neutral-200",
+  };
+
+  const labels: Record<string, string> = {
+    "web-app": "Web App",
+    "api-server": "API",
+    monorepo: "Monorepo",
+    library: "Library",
+    docker: "Docker",
+    batch: "Batch",
+  };
+
+  const cls = colors[type] || "bg-neutral-50 text-neutral-600 border-neutral-200";
+  return (
+    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${cls}`}>
+      {labels[type] || type}
+    </Badge>
+  );
 }
 
 export function AppsTable({ apps }: AppsTableProps) {
@@ -96,7 +208,9 @@ export function AppsTable({ apps }: AppsTableProps) {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Status</TableHead>
               <TableHead>Name</TableHead>
+              <TableHead>Tech</TableHead>
               <TableHead>Port</TableHead>
               <TableHead>GitHub</TableHead>
               <TableHead>Local Path</TableHead>
@@ -106,12 +220,49 @@ export function AppsTable({ apps }: AppsTableProps) {
           <TableBody>
             {visible.map((app) => (
               <TableRow key={app.id}>
-                <TableCell className="font-medium">{app.name}</TableCell>
+                <TableCell className="w-28">
+                  <div className="flex flex-col gap-1">
+                    <StatusBadge status={app.status} />
+                    <ProcessControls app={app} />
+                  </div>
+                </TableCell>
+                <TableCell className="font-medium">
+                  <div className="flex flex-col gap-0.5">
+                    <span>{app.name}</span>
+                    {app.devCommand && (
+                      <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[200px]" title={app.devCommand}>
+                        {app.devCommand}
+                      </span>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <FrameworkBadge framework={app.framework} />
+                      <ProjectTypeBadge type={app.projectType} />
+                    </div>
+                    <RuntimeBadge runtime={app.runtime} pm={app.packageManager} />
+                  </div>
+                </TableCell>
                 <TableCell>
                   {app.port ? (
-                    <Badge variant="outline" className="font-mono">
-                      :{app.port}
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge variant="outline" className="font-mono">
+                        :{app.port}
+                      </Badge>
+                      {app.status === "running" && app.port && (
+                        <a
+                          href={`http://localhost:${app.port}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-muted-foreground hover:text-primary"
+                          title="Open in browser"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
                   ) : (
                     <span className="text-muted-foreground text-sm">—</span>
                   )}

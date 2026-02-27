@@ -60,6 +60,12 @@ export interface ScannedApp {
   port: number | null;
   githubName: string | null;
   githubUrl: string | null;
+  // New fields
+  packageManager: string | null;
+  framework: string | null;
+  runtime: string | null;
+  devCommand: string | null;
+  projectType: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +168,18 @@ function detectPort(dir: string): number | null {
     }
   }
 
+  // 5. fly.toml — internal_port (used by Bun/Hono and other Fly.io apps)
+  const flyTomlPath = path.join(dir, "fly.toml");
+  if (fs.existsSync(flyTomlPath)) {
+    try {
+      const content = fs.readFileSync(flyTomlPath, "utf-8");
+      const m = content.match(/internal_port\s*=\s*(\d{4,5})/);
+      if (m) return parseInt(m[1], 10);
+    } catch {
+      // ignore
+    }
+  }
+
   return null;
 }
 
@@ -198,6 +216,171 @@ function detectGithub(dir: string): { githubName: string | null; githubUrl: stri
   }
 
   return { githubName: null, githubUrl: null };
+}
+
+// ---------------------------------------------------------------------------
+// Package manager detection
+// ---------------------------------------------------------------------------
+
+function detectPackageManager(dir: string): string | null {
+  // 1. Explicit packageManager field in package.json
+  const pkgPath = path.join(dir, "package.json");
+  if (fs.existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+      if (pkg.packageManager) {
+        const pm = String(pkg.packageManager);
+        if (pm.startsWith("bun")) return "bun";
+        if (pm.startsWith("pnpm")) return "pnpm";
+        if (pm.startsWith("yarn")) return "yarn";
+        if (pm.startsWith("npm")) return "npm";
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 2. Lock files — check current dir first, then walk up to monorepo root
+  let current = dir;
+  while (current !== SCAN_ROOT && current !== path.dirname(current)) {
+    if (fs.existsSync(path.join(current, "bun.lock")) || fs.existsSync(path.join(current, "bun.lockb"))) return "bun";
+    if (fs.existsSync(path.join(current, "pnpm-lock.yaml"))) return "pnpm";
+    if (fs.existsSync(path.join(current, "yarn.lock"))) return "yarn";
+    if (fs.existsSync(path.join(current, "package-lock.json"))) return "npm";
+    current = path.dirname(current);
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Framework detection
+// ---------------------------------------------------------------------------
+
+function detectFramework(dir: string): string | null {
+  const pkgPath = path.join(dir, "package.json");
+  if (!fs.existsSync(pkgPath)) return null;
+
+  let deps: Record<string, string> = {};
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+    deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  } catch {
+    return null;
+  }
+
+  if (deps["next"]) return "nextjs";
+  if (deps["hono"]) return "hono";
+  if (deps["@remix-run/react"] || deps["@remix-run/node"]) return "remix";
+  if (deps["@sveltejs/kit"]) return "sveltekit";
+  if (deps["astro"]) return "astro";
+  if (deps["vite"]) return "vite";
+  if (deps["express"]) return "express";
+  if (deps["fastify"]) return "fastify";
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Runtime detection
+// ---------------------------------------------------------------------------
+
+function detectRuntime(dir: string): string | null {
+  // bun lockfile → bun runtime
+  if (fs.existsSync(path.join(dir, "bun.lock")) || fs.existsSync(path.join(dir, "bun.lockb"))) {
+    return "bun";
+  }
+  // deno.json → deno runtime
+  if (fs.existsSync(path.join(dir, "deno.json")) || fs.existsSync(path.join(dir, "deno.jsonc"))) {
+    return "deno";
+  }
+  // Check monorepo root for bun
+  let current = path.dirname(dir);
+  while (current !== SCAN_ROOT && current !== path.dirname(current)) {
+    if (fs.existsSync(path.join(current, "bun.lock")) || fs.existsSync(path.join(current, "bun.lockb"))) {
+      return "bun";
+    }
+    current = path.dirname(current);
+  }
+  return "node";
+}
+
+// ---------------------------------------------------------------------------
+// Dev command detection
+// ---------------------------------------------------------------------------
+
+function detectDevCommand(dir: string, pm: string | null): string | null {
+  const pkgPath = path.join(dir, "package.json");
+  if (!fs.existsSync(pkgPath)) return null;
+
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+    const scripts: Record<string, string> = pkg.scripts || {};
+
+    if (!scripts["dev"] && !scripts["develop"] && !scripts["start"]) return null;
+
+    const scriptKey = scripts["dev"] ? "dev" : scripts["develop"] ? "develop" : "start";
+    const scriptVal = scripts[scriptKey] || "";
+
+    // Detect turbo dev
+    if (scriptVal.includes("turbo")) {
+      return pm === "pnpm" ? "pnpm dev" : pm === "bun" ? "bun dev" : "npm run dev";
+    }
+
+    // Construct pm-prefixed command
+    if (!pm) return `npm run ${scriptKey}`;
+    if (pm === "bun") return `bun run ${scriptKey}`;
+    if (pm === "pnpm") return `pnpm ${scriptKey}`;
+    if (pm === "yarn") return `yarn ${scriptKey}`;
+    return `npm run ${scriptKey}`;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Project type classification
+// ---------------------------------------------------------------------------
+
+function classifyProject(dir: string, framework: string | null): string | null {
+  // Monorepo: has turbo.json or pnpm-workspace.yaml
+  if (
+    fs.existsSync(path.join(dir, "turbo.json")) ||
+    fs.existsSync(path.join(dir, "pnpm-workspace.yaml")) ||
+    fs.existsSync(path.join(dir, "pnpm-workspace.yml"))
+  ) {
+    return "monorepo";
+  }
+
+  // Docker: has docker-compose.yml without package.json (or with)
+  const hasPkg = fs.existsSync(path.join(dir, "package.json"));
+  if (!hasPkg) {
+    if (fs.existsSync(path.join(dir, "docker-compose.yml")) || fs.existsSync(path.join(dir, "docker-compose.yaml"))) {
+      return "docker";
+    }
+    return null;
+  }
+
+  // Check scripts to determine library vs app
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf-8"));
+    const scripts: Record<string, string> = pkg.scripts || {};
+    const hasDev = !!(scripts["dev"] || scripts["develop"] || scripts["start"]);
+
+    if (!hasDev) return "library";
+  } catch {
+    // ignore
+  }
+
+  if (framework === "nextjs" || framework === "remix" || framework === "sveltekit" || framework === "astro") {
+    return "web-app";
+  }
+  if (framework === "hono" || framework === "express" || framework === "fastify") {
+    return "api-server";
+  }
+  if (framework === "vite") return "web-app";
+
+  return "web-app";
 }
 
 // ---------------------------------------------------------------------------
@@ -256,12 +439,23 @@ function scanDir(dir: string, depth: number, results: ScannedApp[]): void {
         ? `${path.basename(monorepoRoot)}/${path.basename(dir)}`
         : path.basename(dir);
 
+      const packageManager = detectPackageManager(dir);
+      const framework = detectFramework(dir);
+      const runtime = detectRuntime(dir);
+      const devCommand = detectDevCommand(dir, packageManager);
+      const projectType = classifyProject(dir, framework);
+
       results.push({
         name,
         localPath: dir,
         port,
         githubName,
         githubUrl,
+        packageManager,
+        framework,
+        runtime,
+        devCommand,
+        projectType,
       });
     }
 
@@ -288,6 +482,33 @@ export function scanApps(): ScannedApp[] {
   return results;
 }
 
+/**
+ * Scans a single directory and returns its metadata (without requiring it to
+ * pass the normal port/github heuristics). Used when registering a brand-new project.
+ */
+export function scanSingleDir(dir: string): ScannedApp | null {
+  if (!fs.existsSync(dir)) return null;
+  const packageManager = detectPackageManager(dir);
+  const framework = detectFramework(dir);
+  const runtime = detectRuntime(dir);
+  const devCommand = detectDevCommand(dir, packageManager);
+  const projectType = classifyProject(dir, framework);
+  const port = detectPort(dir);
+  const { githubName, githubUrl } = detectGithub(dir);
+  return {
+    name: path.basename(dir),
+    localPath: dir,
+    port,
+    githubName,
+    githubUrl,
+    packageManager,
+    framework,
+    runtime,
+    devCommand,
+    projectType,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Port write-back
 // ---------------------------------------------------------------------------
@@ -310,11 +531,11 @@ export function writePortToApp(localPath: string, newPort: number): string[] {
       if (pkg.scripts && typeof pkg.scripts === "object") {
         for (const [key, val] of Object.entries(pkg.scripts)) {
           if (typeof val !== "string") continue;
-          let updated = val
+          const replaced = val
             .replace(/(?:--port|-p)\s+\d{4,5}\b/, (m) => m.replace(/\d{4,5}/, String(newPort)))
             .replace(/\bPORT=\d{4,5}\b/, `PORT=${newPort}`);
-          if (updated !== val) {
-            pkg.scripts[key] = updated;
+          if (replaced !== val) {
+            pkg.scripts[key] = replaced;
             changed = true;
           }
         }

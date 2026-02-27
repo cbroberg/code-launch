@@ -14,6 +14,8 @@ export const updateAppSchema = z.object({
   githubUrl: z.string().url().nullable().optional(),
   port: z.number().int().min(1).max(65535).nullable().optional(),
   localPath: z.string().nullable().optional(),
+  autoBoot: z.boolean().optional(),
+  status: z.enum(["stopped", "starting", "running", "error"]).optional(),
 });
 
 export type CreateAppInput = z.infer<typeof createAppSchema>;
