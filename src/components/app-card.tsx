@@ -161,6 +161,13 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
           )}
+          <CardAction onClick={() => onShowLogs(app)} title="Logs" icon={<Terminal className="h-3.5 w-3.5" />} />
+          <CardAction
+            onClick={() => onToggleFavorite(app)}
+            title={app.favorite ? "Remove from favorites" : "Add to favorites"}
+            icon={<Heart className={cn("h-3.5 w-3.5", app.favorite ? "fill-red-500 text-red-500" : "")} />}
+            className={app.favorite ? "text-red-500 hover:text-red-400 hover:bg-red-500/10" : undefined}
+          />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title="More options">
@@ -185,10 +192,6 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
                 </DropdownMenuItem>
               )}
               {(app.localPath || app.githubUrl) && <DropdownMenuSeparator />}
-              <DropdownMenuItem onClick={() => onToggleFavorite(app)}>
-                <Heart className={cn("h-3.5 w-3.5 mr-2 shrink-0", app.favorite ? "fill-red-500 text-red-500" : "")} />
-                {app.favorite ? "Remove favorite" : "Add favorite"}
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onToggleAutoBoot(app)}>
                 <Rocket className={cn("h-3.5 w-3.5 mr-2 shrink-0", app.autoBoot ? "text-primary" : "")} />
                 {app.autoBoot ? "Auto-boot: on" : "Auto-boot: off"}
@@ -211,10 +214,6 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
                 </>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => onShowLogs(app)}>
-                <Terminal className="h-3.5 w-3.5 mr-2 shrink-0" />
-                View logs
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onEdit(app)}>
                 <Pencil className="h-3.5 w-3.5 mr-2 shrink-0" />
                 Edit
