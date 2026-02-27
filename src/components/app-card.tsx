@@ -174,7 +174,7 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuContent align="end" className="w-52">
               {app.localPath && (
                 <DropdownMenuItem onClick={() => fetch(`/api/apps/${app.id}/launch-cc`, { method: "POST" })}>
                   <Bot className="h-3.5 w-3.5 mr-2 shrink-0" />
@@ -193,7 +193,7 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
                 <DropdownMenuItem asChild>
                   <a href={app.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center">
                     <GitHubIcon className="h-3.5 w-3.5 mr-2 shrink-0" />
-                    GitHub
+                    Open in GitHub
                   </a>
                 </DropdownMenuItem>
               )}
