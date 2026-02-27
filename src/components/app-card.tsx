@@ -207,7 +207,7 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => onBuildAction(app, "install")}>
                     <Package className="h-3.5 w-3.5 mr-2 shrink-0" />
-                    Install deps
+                    Install
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onBuildAction(app, "build")}>
                     <Hammer className="h-3.5 w-3.5 mr-2 shrink-0" />
