@@ -139,15 +139,17 @@ export async function startProcess(appId: number): Promise<void> {
   const env = { ...process.env };
   if (app.port) env.PORT = String(app.port);
 
+  // Use bash with the inherited environment (no profile loading).
+  // Code Launcher inherits the correct PATH from the terminal it was started in.
+  // Loading shell profiles (~/.bashrc, ~/.zshrc) can override the Node version.
   const spawnOpts: SpawnOptions = {
     cwd: app.localPath,
-    shell: true,
     detached: true,
     env,
     stdio: ["ignore", "pipe", "pipe"],
   };
 
-  const child: ChildProcess = spawn(app.devCommand, spawnOpts);
+  const child: ChildProcess = spawn("/bin/bash", ["-c", app.devCommand], spawnOpts);
 
   if (child.stdout) {
     child.stdout.setEncoding("utf-8");
@@ -260,6 +262,139 @@ export async function restartProcess(appId: number): Promise<void> {
 
 export async function clearLogs(appId: number): Promise<void> {
   await db.delete(processLogs).where(eq(processLogs.appId, appId));
+}
+
+// ---------------------------------------------------------------------------
+// Install & Build jobs
+// ---------------------------------------------------------------------------
+
+function getInstallCommand(pm: string | null): string {
+  if (pm === "pnpm") return "pnpm install";
+  if (pm === "bun") return "bun install";
+  if (pm === "yarn") return "yarn";
+  return "npm install";
+}
+
+function getBuildCommand(pm: string | null): string {
+  if (pm === "pnpm") return "pnpm build";
+  if (pm === "bun") return "bun run build";
+  if (pm === "yarn") return "yarn build";
+  return "npm run build";
+}
+
+function getProdStartCommand(pm: string | null): string {
+  if (pm === "pnpm") return "pnpm start";
+  if (pm === "bun") return "bun start";
+  if (pm === "yarn") return "yarn start";
+  return "npm start";
+}
+
+async function runJob(appId: number, cmd: string, cwd: string): Promise<number> {
+  await appendLog(appId, "system", `Running: ${cmd}`);
+  return new Promise((resolve) => {
+    const child = spawn("/bin/bash", ["-c", cmd], {
+      cwd,
+      detached: false,
+      env: { ...process.env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (child.stdout) {
+      child.stdout.setEncoding("utf-8");
+      child.stdout.on("data", (data: string) => {
+        for (const line of data.split("\n").filter(Boolean))
+          appendLog(appId, "stdout", line).catch(() => {});
+      });
+    }
+    if (child.stderr) {
+      child.stderr.setEncoding("utf-8");
+      child.stderr.on("data", (data: string) => {
+        for (const line of data.split("\n").filter(Boolean))
+          appendLog(appId, "stderr", line).catch(() => {});
+      });
+    }
+    child.on("exit", (code) => {
+      const exitCode = code ?? 1;
+      appendLog(appId, "system", `Exited with code ${exitCode}`).catch(() => {});
+      resolve(exitCode);
+    });
+    child.on("error", (err) => {
+      appendLog(appId, "system", `Error: ${err.message}`).catch(() => {});
+      resolve(1);
+    });
+  });
+}
+
+export async function installDeps(appId: number): Promise<void> {
+  const [app] = await db.select().from(apps).where(eq(apps.id, appId));
+  if (!app) throw new Error("App not found");
+  if (!app.localPath) throw new Error("No local path");
+  const cmd = getInstallCommand(app.packageManager);
+  const code = await runJob(appId, cmd, app.localPath);
+  if (code !== 0) throw new Error(`Install failed (exit ${code})`);
+}
+
+export async function buildApp(appId: number, thenStart = false): Promise<void> {
+  const [app] = await db.select().from(apps).where(eq(apps.id, appId));
+  if (!app) throw new Error("App not found");
+  if (!app.localPath) throw new Error("No local path");
+
+  if (processMap.has(appId)) await stopProcess(appId);
+
+  const buildCmd = getBuildCommand(app.packageManager);
+  const code = await runJob(appId, buildCmd, app.localPath);
+  if (code !== 0) {
+    await setStatus(appId, "error", { lastError: `Build failed (exit ${code})` });
+    throw new Error(`Build failed (exit ${code})`);
+  }
+
+  if (!thenStart) return;
+
+  const startCmd = getProdStartCommand(app.packageManager);
+  await appendLog(appId, "system", `Build done — starting production server: ${startCmd}`);
+  const env = { ...process.env };
+  if (app.port) env.PORT = String(app.port);
+  const now = new Date().toISOString();
+  await setStatus(appId, "starting", { pid: null, lastStartedAt: now, lastError: null });
+
+  const child = spawn("/bin/bash", ["-c", startCmd], {
+    cwd: app.localPath,
+    detached: true,
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  if (child.stdout) {
+    child.stdout.setEncoding("utf-8");
+    child.stdout.on("data", (data: string) => {
+      for (const line of data.split("\n").filter(Boolean))
+        appendLog(appId, "stdout", line).catch(() => {});
+    });
+  }
+  if (child.stderr) {
+    child.stderr.setEncoding("utf-8");
+    child.stderr.on("data", (data: string) => {
+      for (const line of data.split("\n").filter(Boolean))
+        appendLog(appId, "stderr", line).catch(() => {});
+    });
+  }
+  child.on("spawn", async () => {
+    const pid = child.pid ?? null;
+    await setStatus(appId, "running", { pid });
+    await appendLog(appId, "system", `Production server PID ${pid}`);
+  });
+  child.on("error", async (err: Error) => {
+    processMap.delete(appId);
+    await setStatus(appId, "error", { pid: null, lastError: err.message });
+  });
+  child.on("exit", async (code: number | null, signal: NodeJS.Signals | null) => {
+    processMap.delete(appId);
+    const newStatus = code === 0 || signal === "SIGTERM" ? "stopped" : "error";
+    await setStatus(appId, newStatus, {
+      pid: null,
+      lastError: newStatus === "error" ? `Exited (code ${code})` : null,
+    });
+  });
+  processMap.set(appId, { process: child, appId, startedAt: now });
 }
 
 async function isHttpUp(port: number): Promise<boolean> {

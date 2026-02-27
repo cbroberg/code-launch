@@ -2,8 +2,12 @@
 
 import {
   Play, Square, RotateCcw, Loader2,
-  ExternalLink, Pencil, Trash2, Terminal, Rocket,
+  ExternalLink, Pencil, Trash2, Terminal, Rocket, Heart,
+  Hammer, Package,
 } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { VSCodeIcon, GitHubIcon } from "./brand-icons";
 import type { App } from "@/drizzle/schema";
 import { cn } from "@/lib/utils";
@@ -24,13 +28,15 @@ interface Props {
   app: App;
   actionLoading?: string;
   onProcessAction: (app: App, action: "start" | "stop" | "restart") => void;
+  onBuildAction: (app: App, action: "install" | "build" | "run-build") => void;
   onToggleAutoBoot: (app: App) => void;
+  onToggleFavorite: (app: App) => void;
   onEdit: (app: App) => void;
   onDelete: (app: App) => void;
   onShowLogs: (app: App) => void;
 }
 
-export function AppCard({ app, actionLoading, onProcessAction, onToggleAutoBoot, onEdit, onDelete, onShowLogs }: Props) {
+export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, onToggleAutoBoot, onToggleFavorite, onEdit, onDelete, onShowLogs }: Props) {
   const isRunning = app.status === "running";
   const isStarting = app.status === "starting";
   const isError = app.status === "error";
@@ -175,11 +181,40 @@ export function AppCard({ app, actionLoading, onProcessAction, onToggleAutoBoot,
             </a>
           )}
           <CardAction
+            onClick={() => onToggleFavorite(app)}
+            title={app.favorite ? "Remove from favorites" : "Add to favorites"}
+            icon={<Heart className={cn("h-3.5 w-3.5", app.favorite ? "fill-red-500 text-red-500" : "")} />}
+            className={app.favorite ? "text-red-500 hover:text-red-400 hover:bg-red-500/10" : undefined}
+          />
+          <CardAction
             onClick={() => onToggleAutoBoot(app)}
             title={app.autoBoot ? "Auto-boot on (click to disable)" : "Auto-boot off (click to enable)"}
             icon={<Rocket className="h-3.5 w-3.5" />}
             className={app.autoBoot ? "text-primary hover:text-primary/80 hover:bg-primary/10" : undefined}
           />
+          {app.localPath && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title="Build options">
+                  <Hammer className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onBuildAction(app, "install")}>
+                  <Package className="h-3.5 w-3.5 mr-2" />
+                  Install deps
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onBuildAction(app, "build")}>
+                  <Hammer className="h-3.5 w-3.5 mr-2" />
+                  Build
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onBuildAction(app, "run-build")}>
+                  <Play className="h-3.5 w-3.5 mr-2" />
+                  Build + Run
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <CardAction onClick={() => onShowLogs(app)} title="Logs" icon={<Terminal className="h-3.5 w-3.5" />} />
           <CardAction onClick={() => onEdit(app)} title="Edit" icon={<Pencil className="h-3.5 w-3.5" />} />
           <CardAction onClick={() => onDelete(app)} title="Delete" icon={<Trash2 className="h-3.5 w-3.5" />} className="hover:text-destructive hover:bg-destructive/10" />

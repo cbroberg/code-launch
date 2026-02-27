@@ -11,8 +11,12 @@ import {
   LayoutGrid, List, Search, X,
   Play, Square, RotateCcw,
   FolderOpen, ExternalLink, Pencil, Trash2,
-  Terminal, Rocket, Plus, ArrowUpDown,
+  Terminal, Rocket, Plus, ArrowUpDown, Heart,
+  Hammer, Package, Power,
 } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { App } from "@/drizzle/schema";
 import { EditAppDialog } from "./edit-app-dialog";
 import { AppCard } from "./app-card";
@@ -22,7 +26,7 @@ import { NewProjectDialog } from "./new-project-dialog";
 import { VSCodeIcon, GitHubIcon } from "./brand-icons";
 import { cn } from "@/lib/utils";
 
-type StatusFilter = "all" | "running" | "stopped" | "error";
+type StatusFilter = "all" | "running" | "stopped" | "error" | "favorites";
 type SortBy = "alpha" | "port";
 
 const FRAMEWORK_LABELS: Record<string, string> = {
@@ -55,6 +59,7 @@ export function AppDashboard({ apps: initialApps }: Props) {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const [actionLoading, setActionLoading] = useState<Record<number, string>>({});
+  const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null);
 
   // Sync when server re-renders (after router.refresh())
   useEffect(() => { setApps(initialApps); }, [initialApps]);
@@ -96,6 +101,31 @@ export function AppDashboard({ apps: initialApps }: Props) {
     return () => es.close();
   }, []);
 
+  // Check autostart status on mount
+  useEffect(() => {
+    fetch("/api/system/autostart")
+      .then(r => r.json())
+      .then(d => setAutostartEnabled(d.installed))
+      .catch(() => {});
+  }, []);
+
+  async function handleToggleAutostart() {
+    const next = !autostartEnabled;
+    try {
+      const res = await fetch("/api/system/autostart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: next ? "install" : "uninstall" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setAutostartEnabled(next);
+      toast.success(next ? "Auto-start enabled — Code Launcher starts with your Mac" : "Auto-start removed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to toggle auto-start");
+    }
+  }
+
   // Cmd+K focuses search
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -127,9 +157,13 @@ export function AppDashboard({ apps: initialApps }: Props) {
 
   const filtered = useMemo(() => {
     const result = apps.filter(app => {
-      if (statusFilter === "stopped" && app.status !== "stopped" && app.status !== null) return false;
-      if (statusFilter === "running" && app.status !== "running") return false;
-      if (statusFilter === "error" && app.status !== "error") return false;
+      if (statusFilter === "favorites") {
+        if (!app.favorite) return false;
+      } else {
+        if (statusFilter === "stopped" && app.status !== "stopped" && app.status !== null) return false;
+        if (statusFilter === "running" && app.status !== "running") return false;
+        if (statusFilter === "error" && app.status !== "error") return false;
+      }
       if (frameworkFilters.size > 0 && (!app.framework || !frameworkFilters.has(app.framework))) return false;
       if (typeFilters.size > 0 && (!app.projectType || !typeFilters.has(app.projectType))) return false;
       const q = query.trim().toLowerCase();
@@ -156,6 +190,7 @@ export function AppDashboard({ apps: initialApps }: Props) {
     running: apps.filter(a => a.status === "running").length,
     stopped: apps.filter(a => !a.status || a.status === "stopped").length,
     error: apps.filter(a => a.status === "error").length,
+    favorites: apps.filter(a => a.favorite).length,
   }), [apps]);
 
   function toggleFramework(fw: string) {
@@ -219,6 +254,21 @@ export function AppDashboard({ apps: initialApps }: Props) {
     }
   }
 
+  async function handleToggleFavorite(app: App) {
+    const next = !app.favorite;
+    setApps(prev => prev.map(a => a.id === app.id ? { ...a, favorite: next } : a));
+    try {
+      const res = await fetch(`/api/apps/${app.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ favorite: next }),
+      });
+      if (!res.ok) throw new Error("Update failed");
+    } catch {
+      setApps(prev => prev.map(a => a.id === app.id ? { ...a, favorite: !next } : a));
+    }
+  }
+
   async function handleToggleAutoBoot(app: App) {
     const next = !app.autoBoot;
     // Optimistic UI update
@@ -236,6 +286,36 @@ export function AppDashboard({ apps: initialApps }: Props) {
       // Revert on error
       setApps(prev => prev.map(a => a.id === app.id ? { ...a, autoBoot: !next } : a));
       toast.error(err instanceof Error ? err.message : "Update failed");
+    }
+  }
+
+  async function handleBuildAction(app: App, action: "install" | "build" | "run-build") {
+    if (!app.localPath) { toast.error("No local path"); return; }
+    setActionLoading(p => ({ ...p, [app.id]: action }));
+    try {
+      if (action === "install") {
+        const res = await fetch(`/api/apps/${app.id}/install`, { method: "POST" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Install failed");
+        toast.success(`Deps installed for "${app.name}" — check logs`);
+        setLogApp(app);
+      } else {
+        const thenStart = action === "run-build";
+        const res = await fetch(`/api/apps/${app.id}/build`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ thenStart }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Build failed");
+        toast.success(thenStart ? `Building "${app.name}" — will auto-start when done` : `Building "${app.name}" — check logs`);
+        setLogApp(app);
+        if (thenStart) router.refresh();
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `${action} failed`);
+    } finally {
+      setActionLoading(p => { const n = { ...p }; delete n[app.id]; return n; });
     }
   }
 
@@ -257,6 +337,25 @@ export function AppDashboard({ apps: initialApps }: Props) {
 
       {/* ── Sidebar ──────────────────────────────────────────────────── */}
       <AppSidebarShell>
+
+        {/* Favorites */}
+        <div>
+          <button
+            onClick={() => setStatusFilter("favorites")}
+            className={cn(
+              "w-full flex items-center justify-between px-2 py-1.5 rounded-md text-sm transition-colors",
+              statusFilter === "favorites"
+                ? "bg-accent text-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent/60"
+            )}
+          >
+            <span className="flex items-center gap-2">
+              <Heart className={cn("h-3.5 w-3.5", statusFilter === "favorites" ? "fill-red-500 text-red-500" : "text-red-400")} />
+              Favorites
+            </span>
+            <span className="text-xs tabular-nums text-muted-foreground">{counts.favorites}</span>
+          </button>
+        </div>
 
         {/* Status filter */}
         <div>
@@ -428,6 +527,19 @@ export function AppDashboard({ apps: initialApps }: Props) {
               {scanning ? "Scanning…" : "Scan"}
             </Button>
 
+            {autostartEnabled !== null && (
+              <Button
+                variant={autostartEnabled ? "default" : "outline"}
+                size="sm"
+                onClick={handleToggleAutostart}
+                className="h-8 gap-1.5"
+                title={autostartEnabled ? "Auto-start enabled — click to disable" : "Enable auto-start at login"}
+              >
+                <Power className="h-3.5 w-3.5" />
+                {autostartEnabled ? "Auto-start on" : "Auto-start off"}
+              </Button>
+            )}
+
             <Button onClick={() => setNewProjectOpen(true)} size="sm" className="h-8 gap-1.5">
               <Plus className="h-3.5 w-3.5" />
               New
@@ -452,7 +564,9 @@ export function AppDashboard({ apps: initialApps }: Props) {
                   app={app}
                   actionLoading={actionLoading[app.id]}
                   onProcessAction={handleProcessAction}
+                  onBuildAction={handleBuildAction}
                   onToggleAutoBoot={handleToggleAutoBoot}
+                  onToggleFavorite={handleToggleFavorite}
                   onEdit={setEditingApp}
                   onDelete={handleDelete}
                   onShowLogs={setLogApp}
@@ -468,7 +582,9 @@ export function AppDashboard({ apps: initialApps }: Props) {
                   last={i === filtered.length - 1}
                   actionLoading={actionLoading[app.id]}
                   onProcessAction={handleProcessAction}
+                  onBuildAction={handleBuildAction}
                   onToggleAutoBoot={handleToggleAutoBoot}
+                  onToggleFavorite={handleToggleFavorite}
                   onEdit={setEditingApp}
                   onDelete={handleDelete}
                   onShowLogs={setLogApp}
@@ -506,13 +622,15 @@ export function AppDashboard({ apps: initialApps }: Props) {
 // ── List row ──────────────────────────────────────────────────────────────────
 
 function ListRow({
-  app, last, actionLoading, onProcessAction, onToggleAutoBoot, onEdit, onDelete, onShowLogs,
+  app, last, actionLoading, onProcessAction, onBuildAction, onToggleAutoBoot, onToggleFavorite, onEdit, onDelete, onShowLogs,
 }: {
   app: App;
   last: boolean;
   actionLoading?: string;
   onProcessAction: (app: App, action: "start" | "stop" | "restart") => void;
+  onBuildAction: (app: App, action: "install" | "build" | "run-build") => void;
   onToggleAutoBoot: (app: App) => void;
+  onToggleFavorite: (app: App) => void;
   onEdit: (app: App) => void;
   onDelete: (app: App) => void;
   onShowLogs: (app: App) => void;
@@ -580,6 +698,34 @@ function ListRow({
           </>
         )}
 
+        {/* Build dropdown */}
+        {app.localPath && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title="Build options"
+              >
+                <Hammer className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onBuildAction(app, "install")}>
+                <Package className="h-3.5 w-3.5 mr-2" />
+                Install deps
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onBuildAction(app, "build")}>
+                <Hammer className="h-3.5 w-3.5 mr-2" />
+                Build
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onBuildAction(app, "run-build")}>
+                <Play className="h-3.5 w-3.5 mr-2" />
+                Build + Run
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
         {/* VS Code */}
         {app.localPath && (
           <a href={`vscode://file${app.localPath}`}
@@ -596,6 +742,12 @@ function ListRow({
           </a>
         )}
 
+        <ActionBtn
+          onClick={() => onToggleFavorite(app)}
+          title={app.favorite ? "Remove from favorites" : "Add to favorites"}
+          icon={<Heart className={cn("h-3.5 w-3.5", app.favorite ? "fill-red-500 text-red-500" : "")} />}
+          className={app.favorite ? "text-red-500 hover:text-red-400 hover:bg-red-500/10" : undefined}
+        />
         <ActionBtn
           onClick={() => onToggleAutoBoot(app)}
           title={app.autoBoot ? "Auto-boot on (click to disable)" : "Auto-boot off (click to enable)"}
