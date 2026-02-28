@@ -31,7 +31,7 @@ import { NewProjectDialog } from "./new-project-dialog";
 import { VSCodeIcon, GitHubIcon } from "./brand-icons";
 import { cn } from "@/lib/utils";
 
-type StatusFilter = "all" | "running" | "stopped" | "error" | "favorites";
+type StatusFilter = "all" | "running" | "stopped" | "error" | "favorites" | "boot";
 type SortBy = "alpha" | "port";
 
 const FRAMEWORK_LABELS: Record<string, string> = {
@@ -166,6 +166,8 @@ export function AppDashboard({ apps: initialApps }: Props) {
     const result = apps.filter(app => {
       if (statusFilter === "favorites") {
         if (!app.favorite) return false;
+      } else if (statusFilter === "boot") {
+        if (!app.autoBoot) return false;
       } else {
         if (statusFilter === "stopped" && app.status !== "stopped" && app.status !== null) return false;
         if (statusFilter === "running" && app.status !== "running") return false;
@@ -198,6 +200,7 @@ export function AppDashboard({ apps: initialApps }: Props) {
     stopped: apps.filter(a => !a.status || a.status === "stopped").length,
     error: apps.filter(a => a.status === "error").length,
     favorites: apps.filter(a => a.favorite).length,
+    boot: apps.filter(a => a.autoBoot).length,
   }), [apps]);
 
   function toggleFramework(fw: string) {
@@ -367,6 +370,25 @@ export function AppDashboard({ apps: initialApps }: Props) {
               Favorites
             </span>
             <span className="text-xs tabular-nums text-muted-foreground">{counts.favorites}</span>
+          </button>
+        </div>
+
+        {/* Boot filter */}
+        <div>
+          <button
+            onClick={() => setStatusFilter("boot")}
+            className={cn(
+              "w-full flex items-center justify-between px-2 py-1.5 rounded-md text-sm transition-colors",
+              statusFilter === "boot"
+                ? "bg-accent text-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent/60"
+            )}
+          >
+            <span className="flex items-center gap-2">
+              <Rocket className={cn("h-3.5 w-3.5", statusFilter === "boot" ? "text-primary" : "text-primary/60")} />
+              Boot
+            </span>
+            <span className="text-xs tabular-nums text-muted-foreground">{counts.boot}</span>
           </button>
         </div>
 
