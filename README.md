@@ -10,9 +10,11 @@ Runs on **port 4200** → [http://localhost:4200](http://localhost:4200)
 
 - **Project discovery** — scans `~/Apps/` and detects framework, runtime, package manager, and dev command
 - **Process manager** — start, stop, restart dev servers directly from the UI
-- **Live logs** — view stdout/stderr per project
+- **Live logs** — view stdout/stderr per project in a slide-over panel
+- **README preview** — render any project's README.md directly in the app
+- **Launch Claude Code** — open an iTerm2/Terminal tab at the project folder and start `claude`
 - **Port management** — auto-assigns vacant ports, writes them back to `package.json` / `.env`
-- **Build actions** — install deps, build, or build + start production server
+- **Build actions** — install, build, or build + start production server
 - **Auto-boot** — mark projects to start automatically when Code Launcher starts
 - **Auto-start at login** — optionally launch Code Launcher itself when your Mac boots
 
@@ -22,7 +24,7 @@ Runs on **port 4200** → [http://localhost:4200](http://localhost:4200)
 
 | Layer | Technology |
 |---|---|
-| Framework | Next.js 14 (App Router) + TypeScript |
+| Framework | Next.js 16 (App Router) + TypeScript |
 | Styling | Tailwind CSS + shadcn/ui (new-york/neutral) |
 | Database | SQLite via better-sqlite3 + Drizzle ORM |
 | Process management | Node.js child_process (built-in) |
@@ -39,24 +41,51 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:4200](http://localhost:4200), then click **Scan** to discover your projects.
+Open [http://localhost:4200](http://localhost:4200), then click **Scan projects** (in the `CL` avatar menu top-right) to discover your projects.
+
+---
+
+## Per-project actions
+
+Each project (card and list row) has visible buttons for the most common actions, and a `⋯` menu for the rest:
+
+**Visible:**
+- ▶ Start / ■ Stop / ↺ Restart
+- ↗ Open in browser (if port set)
+- `>_` View logs
+- ♥ Favorite toggle
+
+**In the `⋯` menu:**
+- **Launch Claude Code** — opens iTerm2 (or Terminal) at the project folder and runs `claude`
+- **Open in VS Code**
+- **Open in GitHub**
+- **README.md** — renders the project's README in a side panel
+- **Auto-boot: on/off** — start this project when Code Launcher starts
+- **Install** — runs `npm install` / `pnpm install` / `bun install`
+- **Build** — runs `npm run build` / `pnpm build`
+- **Build + Run** — build, then start production server
+- **Edit** — edit project metadata
+- **Delete** — remove from Code Launcher
+
+Build output is streamed to the log viewer in real time.
 
 ---
 
 ## Auto-start at Mac Login
 
-Code Launcher can automatically start in the background when you log into your Mac. Once running, open [http://localhost:4200](http://localhost:4200) to see all your managed projects.
+Code Launcher can automatically start in the background when you log into your Mac.
 
-### Enable auto-start (via UI)
+### Enable (via UI)
 
 1. Open Code Launcher at [http://localhost:4200](http://localhost:4200)
-2. Click the **"Auto-start off"** button in the top-right toolbar
-3. It turns into **"Auto-start on"** — Code Launcher will launch automatically at **next login** (not immediately, to avoid conflicts with the currently running instance)
+2. Click the **`CL`** avatar button top-right
+3. Click **"Auto-start: off"** → it becomes **"Auto-start: on"**
 
-### Enable auto-start (manually)
+Code Launcher will launch automatically at **next login** (not immediately, to avoid port conflicts with the running instance).
+
+### Enable (manually)
 
 ```bash
-# The button in the UI calls this API endpoint:
 curl -X POST http://localhost:4200/api/system/autostart \
   -H "Content-Type: application/json" \
   -d '{"action": "install"}'
@@ -78,12 +107,11 @@ Logs are written to:
 ~/Library/Logs/code-launcher/stderr.log
 ```
 
-### Disable auto-start (via UI)
+### Disable (via UI)
 
-1. Click the **"Auto-start on"** button in the toolbar
-2. It toggles back to **"Auto-start off"** — the LaunchAgent is unloaded and removed
+Click the **`CL`** avatar → **"Auto-start: on"** → toggles off and removes the LaunchAgent.
 
-### Disable auto-start (manually)
+### Disable (manually)
 
 ```bash
 # Via the API:
@@ -91,24 +119,10 @@ curl -X POST http://localhost:4200/api/system/autostart \
   -H "Content-Type: application/json" \
   -d '{"action": "uninstall"}'
 
-# Or directly via launchctl:
+# Or directly:
 launchctl unload ~/Library/LaunchAgents/com.cbroberg.code-launcher.plist
 rm ~/Library/LaunchAgents/com.cbroberg.code-launcher.plist
 ```
-
----
-
-## Build Actions
-
-Each project card and list row has a **hammer icon** with a dropdown:
-
-| Action | Command run |
-|---|---|
-| **Install deps** | `npm install` / `pnpm install` / `bun install` |
-| **Build** | `npm run build` / `pnpm build` |
-| **Build + Run** | Build, then start production server (`npm start`) |
-
-Build output is streamed to the project's log viewer in real time.
 
 ---
 
@@ -127,6 +141,8 @@ Base URL: `http://localhost:4200`
 | `POST` | `/api/apps/:id/restart` | Restart process |
 | `POST` | `/api/apps/:id/install` | Install dependencies |
 | `POST` | `/api/apps/:id/build` | Build (body: `{"thenStart": true}` to also start) |
+| `POST` | `/api/apps/:id/launch-cc` | Open project in iTerm2/Terminal with Claude Code |
+| `GET` | `/api/apps/:id/readme` | Get project README.md content |
 | `GET` | `/api/apps/:id/logs` | Get stored logs |
 | `GET` | `/api/apps/:id/logs/stream` | SSE: stream live logs |
 | `GET` | `/api/status/stream` | SSE: stream status updates for all apps |
@@ -164,6 +180,8 @@ src/
 │   │   │   ├── restart/       # POST restart
 │   │   │   ├── install/       # POST install deps
 │   │   │   ├── build/         # POST build (+ optional start)
+│   │   │   ├── launch-cc/     # POST open in Claude Code via terminal
+│   │   │   ├── readme/        # GET project README.md
 │   │   │   └── logs/          # GET logs + SSE stream
 │   │   ├── scan/              # POST filesystem scan
 │   │   ├── probe/             # POST port probe
@@ -176,6 +194,7 @@ src/
 │   ├── app-dashboard.tsx      # Client shell (filters, grid/list, actions)
 │   ├── app-card.tsx           # Grid card component
 │   ├── log-viewer.tsx         # Sheet with live log tail
+│   ├── readme-viewer.tsx      # Sheet with rendered README.md
 │   ├── new-project-dialog.tsx # Create GitHub repo + clone
 │   └── ui/                    # shadcn primitives
 ├── drizzle/
