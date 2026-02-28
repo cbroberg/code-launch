@@ -2,7 +2,7 @@ import { spawn, execSync, type ChildProcess, type SpawnOptions } from "child_pro
 import { EventEmitter } from "events";
 import { db } from "@/drizzle";
 import { apps, processLogs } from "@/drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, lt, and } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
 // Global singletons (survive HMR)
@@ -41,15 +41,21 @@ async function appendLog(appId: number, stream: "stdout" | "stderr" | "system", 
   await db.insert(processLogs).values({ appId, stream, message, createdAt });
   logEmitter.emit(`log:${appId}`, { stream, message, createdAt });
 
-  // Prune: keep newest 1000
+  // Prune: delete rows older than 7 days
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  await db.delete(processLogs).where(
+    and(eq(processLogs.appId, appId), lt(processLogs.createdAt, sevenDaysAgo))
+  );
+
+  // Prune: keep newest 5000 rows per app as a hard cap
   const count = await db.$count(processLogs, eq(processLogs.appId, appId));
-  if (count > 1000) {
+  if (count > 5000) {
     const oldest = await db
       .select({ id: processLogs.id })
       .from(processLogs)
       .where(eq(processLogs.appId, appId))
       .orderBy(processLogs.id)
-      .limit(100);
+      .limit(500);
     for (const row of oldest) {
       await db.delete(processLogs).where(eq(processLogs.id, row.id));
     }
