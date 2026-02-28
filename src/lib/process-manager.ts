@@ -324,11 +324,12 @@ async function runJob(appId: number, cmd: string, cwd: string): Promise<number> 
   });
 }
 
-export async function installDeps(appId: number): Promise<void> {
+export async function installDeps(appId: number, force = false): Promise<void> {
   const [app] = await db.select().from(apps).where(eq(apps.id, appId));
   if (!app) throw new Error("App not found");
   if (!app.localPath) throw new Error("No local path");
-  const cmd = getInstallCommand(app.packageManager);
+  const base = getInstallCommand(app.packageManager);
+  const cmd = force ? `${base} --force` : base;
   const code = await runJob(appId, cmd, app.localPath);
   if (code !== 0) throw new Error(`Install failed (exit ${code})`);
 }

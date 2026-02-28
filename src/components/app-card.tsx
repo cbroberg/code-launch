@@ -3,7 +3,7 @@
 import {
   Play, Square, RotateCcw, Loader2,
   ExternalLink, Pencil, Trash2, Terminal, Rocket, Heart,
-  Hammer, Package, MoreHorizontal, Bot, FileText,
+  Hammer, Package, MoreHorizontal, Bot, FileText, Wrench,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -29,7 +29,7 @@ interface Props {
   app: App;
   actionLoading?: string;
   onProcessAction: (app: App, action: "start" | "stop" | "restart") => void;
-  onBuildAction: (app: App, action: "install" | "build" | "run-build") => void;
+  onBuildAction: (app: App, action: "install" | "build" | "run-build" | "rebuild") => void;
   onToggleAutoBoot: (app: App) => void;
   onToggleFavorite: (app: App) => void;
   onEdit: (app: App) => void;
@@ -223,6 +223,10 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
                   <DropdownMenuItem onClick={() => onBuildAction(app, "run-build")}>
                     <Play className="h-3.5 w-3.5 mr-2 shrink-0" />
                     Build + Run
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onBuildAction(app, "rebuild")}>
+                    <Wrench className="h-3.5 w-3.5 mr-2 shrink-0" />
+                    Rebuild native modules
                   </DropdownMenuItem>
                 </>
               )}

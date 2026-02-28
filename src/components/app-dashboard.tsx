@@ -14,7 +14,7 @@ import {
   Terminal, Rocket, Plus, ArrowUpDown, Heart,
   Hammer, Package, Power,
   Sun, Moon, Monitor, ChevronDown,
-  MoreHorizontal, Bot, FileText,
+  MoreHorizontal, Bot, FileText, Wrench,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -296,7 +296,7 @@ export function AppDashboard({ apps: initialApps }: Props) {
     }
   }
 
-  async function handleBuildAction(app: App, action: "install" | "build" | "run-build") {
+  async function handleBuildAction(app: App, action: "install" | "build" | "run-build" | "rebuild") {
     if (!app.localPath) { toast.error("No local path"); return; }
     setActionLoading(p => ({ ...p, [app.id]: action }));
     try {
@@ -305,6 +305,12 @@ export function AppDashboard({ apps: initialApps }: Props) {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Install failed");
         toast.success(`Deps installed for "${app.name}" — check logs`);
+        setLogApp(app);
+      } else if (action === "rebuild") {
+        const res = await fetch(`/api/apps/${app.id}/rebuild`, { method: "POST" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Rebuild failed");
+        toast.success(`Rebuilding native modules for "${app.name}" — check logs`);
         setLogApp(app);
       } else {
         const thenStart = action === "run-build";
@@ -696,7 +702,7 @@ function ListRow({
   last: boolean;
   actionLoading?: string;
   onProcessAction: (app: App, action: "start" | "stop" | "restart") => void;
-  onBuildAction: (app: App, action: "install" | "build" | "run-build") => void;
+  onBuildAction: (app: App, action: "install" | "build" | "run-build" | "rebuild") => void;
   onToggleAutoBoot: (app: App) => void;
   onToggleFavorite: (app: App) => void;
   onEdit: (app: App) => void;
@@ -837,6 +843,10 @@ function ListRow({
                 <DropdownMenuItem onClick={() => onBuildAction(app, "run-build")}>
                   <Play className="h-3.5 w-3.5 mr-2 shrink-0" />
                   Build + Run
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onBuildAction(app, "rebuild")}>
+                  <Wrench className="h-3.5 w-3.5 mr-2 shrink-0" />
+                  Rebuild native modules
                 </DropdownMenuItem>
               </>
             )}
