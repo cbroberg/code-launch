@@ -14,6 +14,7 @@ import {
   Terminal, Rocket, Plus, ArrowUpDown, Heart,
   Hammer, Package, Power,
   Sun, Moon, Monitor, ChevronDown,
+  MoreHorizontal, Bot, FileText,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -646,6 +647,7 @@ export function AppDashboard({ apps: initialApps }: Props) {
                   onEdit={setEditingApp}
                   onDelete={handleDelete}
                   onShowLogs={setLogApp}
+                  onShowReadme={setReadmeApp}
                 />
               ))}
             </div>
@@ -688,7 +690,7 @@ export function AppDashboard({ apps: initialApps }: Props) {
 // ── List row ──────────────────────────────────────────────────────────────────
 
 function ListRow({
-  app, last, actionLoading, onProcessAction, onBuildAction, onToggleAutoBoot, onToggleFavorite, onEdit, onDelete, onShowLogs,
+  app, last, actionLoading, onProcessAction, onBuildAction, onToggleAutoBoot, onToggleFavorite, onEdit, onDelete, onShowLogs, onShowReadme,
 }: {
   app: App;
   last: boolean;
@@ -700,6 +702,7 @@ function ListRow({
   onEdit: (app: App) => void;
   onDelete: (app: App) => void;
   onShowLogs: (app: App) => void;
+  onShowReadme: (app: App) => void;
 }) {
   const isRunning = app.status === "running";
   const isStarting = app.status === "starting";
@@ -749,80 +752,105 @@ function ListRow({
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-1 shrink-0">
-        {/* Process control */}
-        {app.devCommand && (
+      <div className="flex items-center gap-0.5 shrink-0">
+        {/* Process controls */}
+        {!app.devCommand ? null : !isRunning && !isStarting ? (
+          <ActionBtn onClick={() => onProcessAction(app, "start")} loading={actionLoading === "start"} title="Start" icon={<Play className="h-3.5 w-3.5" />} className="text-green-500 hover:text-green-400 hover:bg-green-500/10" />
+        ) : (
           <>
-            {!isRunning && !isStarting ? (
-              <ActionBtn onClick={() => onProcessAction(app, "start")} loading={actionLoading === "start"} title="Start" icon={<Play className="h-3.5 w-3.5" />} className="text-green-500 hover:text-green-400 hover:bg-green-500/10" />
-            ) : (
-              <>
-                <ActionBtn onClick={() => onProcessAction(app, "stop")} loading={actionLoading === "stop"} title="Stop" icon={<Square className="h-3.5 w-3.5" />} className="text-red-500 hover:text-red-400 hover:bg-red-500/10" />
-                <ActionBtn onClick={() => onProcessAction(app, "restart")} loading={actionLoading === "restart"} title="Restart" icon={<RotateCcw className="h-3.5 w-3.5" />} />
-              </>
-            )}
+            <ActionBtn onClick={() => onProcessAction(app, "stop")} loading={actionLoading === "stop"} title="Stop" icon={<Square className="h-3.5 w-3.5" />} className="text-red-500 hover:text-red-400 hover:bg-red-500/10" />
+            <ActionBtn onClick={() => onProcessAction(app, "restart")} loading={actionLoading === "restart"} title="Restart" icon={<RotateCcw className="h-3.5 w-3.5" />} />
           </>
         )}
 
-        {/* Build dropdown */}
-        {app.localPath && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title="Build options"
-              >
-                <Hammer className="h-3.5 w-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onBuildAction(app, "install")}>
-                <Package className="h-3.5 w-3.5 mr-2" />
-                Install deps
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onBuildAction(app, "build")}>
-                <Hammer className="h-3.5 w-3.5 mr-2" />
-                Build
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onBuildAction(app, "run-build")}>
-                <Play className="h-3.5 w-3.5 mr-2" />
-                Build + Run
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-
-        {/* VS Code */}
-        {app.localPath && (
-          <a href={`vscode://file${app.localPath}`}
-            className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title="Open in VS Code">
-            <VSCodeIcon className="h-3.5 w-3.5" />
+        {/* Open in browser */}
+        {app.port && (
+          <a href={`http://localhost:${app.port}`} target="_blank" rel="noopener noreferrer"
+            className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title={`Open localhost:${app.port}`}>
+            <ExternalLink className="h-3.5 w-3.5" />
           </a>
         )}
 
-        {/* GitHub */}
-        {app.githubUrl && (
-          <a href={app.githubUrl} target="_blank" rel="noopener noreferrer"
-            className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title="GitHub">
-            <GitHubIcon className="h-3.5 w-3.5" />
-          </a>
-        )}
+        {/* Logs */}
+        <ActionBtn onClick={() => onShowLogs(app)} title="Logs" icon={<Terminal className="h-3.5 w-3.5" />} />
 
+        {/* Favorite */}
         <ActionBtn
           onClick={() => onToggleFavorite(app)}
           title={app.favorite ? "Remove from favorites" : "Add to favorites"}
           icon={<Heart className={cn("h-3.5 w-3.5", app.favorite ? "fill-red-500 text-red-500" : "")} />}
           className={app.favorite ? "text-red-500 hover:text-red-400 hover:bg-red-500/10" : undefined}
         />
-        <ActionBtn
-          onClick={() => onToggleAutoBoot(app)}
-          title={app.autoBoot ? "Auto-boot on (click to disable)" : "Auto-boot off (click to enable)"}
-          icon={<Rocket className="h-3.5 w-3.5" />}
-          className={app.autoBoot ? "text-primary hover:text-primary/80 hover:bg-primary/10" : undefined}
-        />
-        <ActionBtn onClick={() => onShowLogs(app)} title="Logs" icon={<Terminal className="h-3.5 w-3.5" />} />
-        <ActionBtn onClick={() => onEdit(app)} title="Edit" icon={<Pencil className="h-3.5 w-3.5" />} />
-        <ActionBtn onClick={() => onDelete(app)} title="Delete" icon={<Trash2 className="h-3.5 w-3.5" />} className="hover:text-destructive hover:bg-destructive/10" />
+
+        {/* ⋯ overflow menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title="More options">
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            {app.localPath && (
+              <DropdownMenuItem onClick={() => fetch(`/api/apps/${app.id}/launch-cc`, { method: "POST" })}>
+                <Bot className="h-3.5 w-3.5 mr-2 shrink-0" />
+                Launch Claude Code
+              </DropdownMenuItem>
+            )}
+            {app.localPath && (
+              <DropdownMenuItem asChild>
+                <a href={`vscode://file${app.localPath}`} className="flex items-center">
+                  <VSCodeIcon className="h-3.5 w-3.5 mr-2 shrink-0" />
+                  Open in VS Code
+                </a>
+              </DropdownMenuItem>
+            )}
+            {app.githubUrl && (
+              <DropdownMenuItem asChild>
+                <a href={app.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center">
+                  <GitHubIcon className="h-3.5 w-3.5 mr-2 shrink-0" />
+                  Open in GitHub
+                </a>
+              </DropdownMenuItem>
+            )}
+            {app.localPath && (
+              <DropdownMenuItem onClick={() => onShowReadme(app)}>
+                <FileText className="h-3.5 w-3.5 mr-2 shrink-0" />
+                README.md
+              </DropdownMenuItem>
+            )}
+            {(app.localPath || app.githubUrl) && <DropdownMenuSeparator />}
+            <DropdownMenuItem onClick={() => onToggleAutoBoot(app)}>
+              <Rocket className={cn("h-3.5 w-3.5 mr-2 shrink-0", app.autoBoot ? "text-primary" : "")} />
+              {app.autoBoot ? "Auto-boot: on" : "Auto-boot: off"}
+            </DropdownMenuItem>
+            {app.localPath && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => onBuildAction(app, "install")}>
+                  <Package className="h-3.5 w-3.5 mr-2 shrink-0" />
+                  Install
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onBuildAction(app, "build")}>
+                  <Hammer className="h-3.5 w-3.5 mr-2 shrink-0" />
+                  Build
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onBuildAction(app, "run-build")}>
+                  <Play className="h-3.5 w-3.5 mr-2 shrink-0" />
+                  Build + Run
+                </DropdownMenuItem>
+              </>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onEdit(app)}>
+              <Pencil className="h-3.5 w-3.5 mr-2 shrink-0" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onDelete(app)} className="text-destructive focus:text-destructive">
+              <Trash2 className="h-3.5 w-3.5 mr-2 shrink-0" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
