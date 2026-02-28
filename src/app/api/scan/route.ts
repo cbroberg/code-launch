@@ -4,11 +4,25 @@ import { apps } from "@/drizzle/schema";
 import { scanApps, writePortToApp } from "@/lib/scanner";
 import { eq, isNotNull } from "drizzle-orm";
 import { getSystemListeningPorts, findVacantPort } from "@/lib/port-utils";
-import { processMap } from "@/lib/process-manager";
+import { processMap, statusEmitter } from "@/lib/process-manager";
 import { gitCommitPortChange } from "@/lib/git-ops";
+import { getAgent, sendCommand } from "@/lib/agent-ws";
+import type { ScannedApp } from "@/lib/agent-ws";
+import crypto from "crypto";
 
 export async function POST() {
-  const scanned = scanApps();
+  const agent = getAgent();
+  let scanned: ScannedApp[];
+
+  if (agent) {
+    const event = await sendCommand({ type: "scan", requestId: crypto.randomUUID() }, 60_000);
+    if (event.type !== "scanResult") {
+      return NextResponse.json({ error: "Agent scan failed" }, { status: 500 });
+    }
+    scanned = event.apps;
+  } else {
+    scanned = scanApps();
+  }
 
   let inserted = 0;
   let updated = 0;
@@ -95,8 +109,8 @@ export async function POST() {
         assignedThisScan.add(newPort);
         portToInsert = newPort;
 
-        // Write port to project files and git commit
-        if (app.devCommand) {
+        // Write port to project files and git commit (local only — skip when relayed via agent)
+        if (!agent && app.devCommand) {
           const written = writePortToApp(app.localPath, newPort);
           if (written.length > 0) {
             const git = gitCommitPortChange(app.localPath, written, newPort);
@@ -157,21 +171,48 @@ export async function POST() {
     }
   }
 
-  // Probe listening ports to detect externally running processes
-  const listening = getSystemListeningPorts();
+  // Probe running status
   const now2 = new Date().toISOString();
   const allApps = await db.select().from(apps).where(isNotNull(apps.port));
   let probeUpdated = 0;
 
-  for (const app of allApps) {
-    if (!app.port || processMap.has(app.id)) continue;
-    const isListening = listening.has(app.port);
-    if (isListening && app.status !== "running") {
-      await db.update(apps).set({ status: "running", updatedAt: now2 }).where(eq(apps.id, app.id));
-      probeUpdated++;
-    } else if (!isListening && app.status === "running") {
-      await db.update(apps).set({ status: "stopped", pid: null, updatedAt: now2 }).where(eq(apps.id, app.id));
-      probeUpdated++;
+  if (agent) {
+    const probeApps = allApps.map((a) => ({
+      id: a.id, name: a.name, port: a.port, pid: a.pid,
+      localPath: a.localPath, devCommand: a.devCommand, packageManager: a.packageManager,
+    }));
+    const probeEvent = await sendCommand(
+      { type: "probe", requestId: crypto.randomUUID(), apps: probeApps },
+      15_000
+    );
+    if (probeEvent.type === "probeResult") {
+      for (const r of probeEvent.results) {
+        if (!r) continue;
+        const app = allApps.find((a) => a.id === r.appId);
+        if (!app) continue;
+        if (r.status === "running" && app.status !== "running") {
+          await db.update(apps).set({ status: "running", pid: r.pid, updatedAt: now2 }).where(eq(apps.id, r.appId));
+          statusEmitter.emit("status", { appId: r.appId, status: "running", pid: r.pid });
+          probeUpdated++;
+        } else if (r.status === "stopped" && app.status === "running") {
+          await db.update(apps).set({ status: "stopped", pid: null, updatedAt: now2 }).where(eq(apps.id, r.appId));
+          statusEmitter.emit("status", { appId: r.appId, status: "stopped", pid: null });
+          probeUpdated++;
+        }
+      }
+    }
+  } else {
+    const listening = getSystemListeningPorts();
+    for (const app of allApps) {
+      if (!app.port || processMap.has(app.id)) continue;
+      const isListening = listening.has(app.port);
+      if (isListening && app.status !== "running") {
+        await db.update(apps).set({ status: "running", updatedAt: now2 }).where(eq(apps.id, app.id));
+        probeUpdated++;
+      } else if (!isListening && app.status === "running") {
+        await db.update(apps).set({ status: "stopped", pid: null, updatedAt: now2 }).where(eq(apps.id, app.id));
+        probeUpdated++;
+      }
     }
   }
 

@@ -332,3 +332,22 @@ export function sendToAgent(cmd: AgentCommand): void {
   if (!agent || agent.ws.readyState !== WebSocket.OPEN) return;
   agent.ws.send(JSON.stringify(cmd));
 }
+
+/** Converts a DB app record to the AppConfig shape expected by the agent. */
+export function toAppConfig(app: {
+  id: number;
+  name: string;
+  localPath: string | null;
+  devCommand: string | null;
+  port: number | null;
+  packageManager: string | null;
+}): AppConfig {
+  return {
+    id: app.id,
+    name: app.name,
+    localPath: app.localPath ?? "",
+    devCommand: app.devCommand,
+    port: app.port,
+    packageManager: app.packageManager,
+  };
+}

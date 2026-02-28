@@ -4,14 +4,12 @@ import { db } from "@/drizzle";
 import { apps } from "@/drizzle/schema";
 import { isNotNull, isNull, eq, and, inArray } from "drizzle-orm";
 import { processMap, statusEmitter } from "@/lib/process-manager";
+import { getAgent, sendCommand } from "@/lib/agent-ws";
+import crypto from "crypto";
 
-/** True if the port actually responds to an HTTP request within 2.5s. */
 async function isHttpUp(port: number): Promise<boolean> {
   try {
-    await fetch(`http://127.0.0.1:${port}/`, {
-      signal: AbortSignal.timeout(2500),
-      redirect: "manual",
-    });
+    await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(2500), redirect: "manual" });
     return true;
   } catch {
     return false;
@@ -47,51 +45,75 @@ function getListeningPortForPid(pid: number): number | null {
   }
 }
 
-/**
- * POST /api/probe
- * Uses HTTP health checks (not just port listening) to determine real status.
- * A service is "running" only if it actually responds to an HTTP request.
- */
 export async function POST() {
   const now = new Date().toISOString();
   const rows = await db.select().from(apps).where(isNotNull(apps.port));
+  let updated = 0;
 
-  // Run HTTP checks in parallel for speed
+  const agent = getAgent();
+
+  if (agent) {
+    // Relay probe to agent
+    const probeApps = rows.map((a) => ({
+      id: a.id,
+      name: a.name,
+      port: a.port,
+      pid: a.pid,
+      localPath: a.localPath,
+      devCommand: a.devCommand,
+      packageManager: a.packageManager,
+    }));
+
+    const event = await sendCommand(
+      { type: "probe", requestId: crypto.randomUUID(), apps: probeApps },
+      15_000
+    );
+
+    if (event.type === "probeResult") {
+      for (const r of event.results) {
+        if (!r) continue;
+        const app = rows.find((a) => a.id === r.appId);
+        if (!app) continue;
+        if (r.status === "running" && app.status !== "running") {
+          await db.update(apps).set({ status: "running", pid: r.pid, updatedAt: now }).where(eq(apps.id, r.appId));
+          statusEmitter.emit("status", { appId: r.appId, status: "running", pid: r.pid });
+          updated++;
+        } else if (r.status === "stopped" && app.status === "running") {
+          await db.update(apps).set({ status: "stopped", pid: null, updatedAt: now }).where(eq(apps.id, r.appId));
+          statusEmitter.emit("status", { appId: r.appId, status: "stopped", pid: null });
+          updated++;
+        }
+      }
+    }
+
+    return NextResponse.json({ probed: rows.length, updated });
+  }
+
+  // Local path: HTTP checks
   const results = await Promise.all(
     rows.map(async (app) => {
       if (!app.port) return null;
-      // Apps managed by our process manager: trust their status, skip HTTP check
       if (processMap.has(app.id)) return null;
-
       const up = await isHttpUp(app.port);
       return { app, up };
     })
   );
 
-  let updated = 0;
   for (const result of results) {
     if (!result) continue;
     const { app, up } = result;
-
     if (up && app.status !== "running") {
       const pid = getPidOnPort(app.port!);
-      await db
-        .update(apps)
-        .set({ status: "running", pid, updatedAt: now })
-        .where(eq(apps.id, app.id));
+      await db.update(apps).set({ status: "running", pid, updatedAt: now }).where(eq(apps.id, app.id));
       statusEmitter.emit("status", { appId: app.id, status: "running", pid });
       updated++;
     } else if (!up && app.status === "running") {
-      await db
-        .update(apps)
-        .set({ status: "stopped", pid: null, updatedAt: now })
-        .where(eq(apps.id, app.id));
+      await db.update(apps).set({ status: "stopped", pid: null, updatedAt: now }).where(eq(apps.id, app.id));
       statusEmitter.emit("status", { appId: app.id, status: "stopped", pid: null });
       updated++;
     }
   }
 
-  // Detect ports for managed running apps that have a PID but no port yet
   const noportApps = await db
     .select()
     .from(apps)

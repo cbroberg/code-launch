@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { execSync } from "child_process";
 
 export interface FlyApp {
   name: string;
@@ -7,43 +6,79 @@ export interface FlyApp {
   status: "deployed" | "suspended" | "pending" | string;
   hostname: string;
   appUrl: string;
-  latestDeploy: string | null; // ISO timestamp
+  latestDeploy: string | null;
 }
 
-const FLY_BIN = "/opt/homebrew/bin/fly";
+const FLY_GQL = "https://api.fly.io/graphql";
+
+const APPS_QUERY = `
+  query ListApps {
+    apps(first: 400) {
+      nodes {
+        name
+        status
+        hostname
+        appUrl
+        organization { slug }
+        currentRelease { createdAt }
+      }
+    }
+  }
+`;
 
 export async function GET() {
+  const token = process.env.FLY_API_TOKEN;
+  if (!token) {
+    return NextResponse.json(
+      { apps: [], error: "FLY_API_TOKEN not configured" },
+      { status: 503 }
+    );
+  }
+
   try {
-    const raw = execSync(`${FLY_BIN} apps list --json`, {
-      encoding: "utf-8",
-      timeout: 15_000,
+    const res = await fetch(FLY_GQL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query: APPS_QUERY }),
+      cache: "no-store",
     });
 
-    const parsed = JSON.parse(raw) as Array<{
-      Name: string;
-      Status: string;
-      Hostname: string;
-      AppURL: string;
-      Organization: { Slug: string } | null;
-      CurrentRelease: { CreatedAt: string } | null;
-    }>;
+    if (!res.ok) throw new Error(`Fly API: ${res.status}`);
 
-    const flyApps: FlyApp[] = parsed.map(a => ({
-      name: a.Name,
-      org: a.Organization?.Slug ?? "personal",
-      status: a.Status || "unknown",
-      hostname: a.Hostname,
-      appUrl: a.AppURL || `https://${a.Hostname}`,
-      latestDeploy: a.CurrentRelease?.CreatedAt ?? null,
+    const json = (await res.json()) as {
+      data?: {
+        apps: {
+          nodes: Array<{
+            name: string;
+            status: string;
+            hostname: string;
+            appUrl: string;
+            organization: { slug: string } | null;
+            currentRelease: { createdAt: string } | null;
+          }>;
+        };
+      };
+      errors?: Array<{ message: string }>;
+    };
+
+    if (json.errors?.length) throw new Error(json.errors[0].message);
+
+    const nodes = json.data?.apps.nodes ?? [];
+    const flyApps: FlyApp[] = nodes.map((a) => ({
+      name: a.name,
+      org: a.organization?.slug ?? "personal",
+      status: a.status || "unknown",
+      hostname: a.hostname,
+      appUrl: a.appUrl || `https://${a.hostname}`,
+      latestDeploy: a.currentRelease?.createdAt ?? null,
     }));
 
     return NextResponse.json({ apps: flyApps });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const unavailable = msg.includes("not found") || msg.includes("not logged") || msg.includes("ENOENT");
-    return NextResponse.json(
-      { apps: [], error: unavailable ? "Fly CLI not available or not logged in" : msg },
-      { status: unavailable ? 503 : 500 }
-    );
+    return NextResponse.json({ apps: [], error: msg }, { status: 500 });
   }
 }

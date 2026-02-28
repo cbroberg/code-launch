@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { execSync } from "child_process";
+import { getAgent, sendCommand } from "@/lib/agent-ws";
+import crypto from "crypto";
 
 export interface DockerContainer {
   id: string;
   shortId: string;
   name: string;
   image: string;
-  imageName: string; // just the last segment
+  imageName: string;
   state: "running" | "exited" | "paused" | "restarting" | "created" | string;
-  status: string;    // e.g. "Up 3 hours", "Exited (0) 2 days ago"
+  status: string;
   runningFor: string;
   ports: PortBinding[];
   isKubernetes: boolean;
@@ -31,6 +33,14 @@ function parsePortBindings(portsStr: string): PortBinding[] {
 }
 
 export async function GET() {
+  const agent = getAgent();
+
+  if (agent) {
+    const event = await sendCommand({ type: "docker:list", requestId: crypto.randomUUID() }, 10_000);
+    if (event.type === "docker:containers") return NextResponse.json({ containers: event.containers });
+    return NextResponse.json({ containers: [], error: "Agent error" }, { status: 500 });
+  }
+
   try {
     const raw = execSync('docker ps --all --format "{{json .}}"', {
       encoding: "utf-8",
@@ -41,15 +51,13 @@ export async function GET() {
       .trim()
       .split("\n")
       .filter(Boolean)
-      .map(line => {
+      .map((line) => {
         const c = JSON.parse(line) as {
           ID: string; Names: string; Image: string;
           State: string; Status: string; Ports: string; RunningFor: string;
         };
-
         const name = c.Names.replace(/^\//, "");
         const imageName = c.Image.split(":")[0].split("/").pop() ?? c.Image;
-
         return {
           id: c.ID,
           shortId: c.ID.slice(0, 12),

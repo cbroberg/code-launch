@@ -3,14 +3,27 @@ import { db } from "@/drizzle";
 import { apps } from "@/drizzle/schema";
 import { isNotNull } from "drizzle-orm";
 import { getSystemListeningPorts } from "@/lib/port-utils";
+import { getAgent, sendCommand } from "@/lib/agent-ws";
+import crypto from "crypto";
 
 export async function GET() {
-  const rows = await db
-    .select({ port: apps.port })
-    .from(apps)
-    .where(isNotNull(apps.port));
+  // Always include DB-registered ports in the used set
+  const rows = await db.select({ port: apps.port }).from(apps).where(isNotNull(apps.port));
+  const dbPorts = rows.map((r) => r.port as number);
 
-  const dbPorts = new Set(rows.map((r) => r.port as number));
+  const agent = getAgent();
+  if (agent) {
+    const event = await sendCommand({
+      type: "vacantPort",
+      requestId: crypto.randomUUID(),
+      usedPorts: dbPorts,
+    });
+    if (event.type === "vacantPort") {
+      return NextResponse.json({ port: event.port, ports: [event.port] });
+    }
+    return NextResponse.json({ error: "Agent error" }, { status: 500 });
+  }
+
   const systemPorts = getSystemListeningPorts();
   const usedPorts = new Set([...dbPorts, ...systemPorts]);
 

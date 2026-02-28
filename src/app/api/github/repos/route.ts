@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { execSync } from "child_process";
+import { auth } from "@/lib/auth";
 import { db } from "@/drizzle";
 import { apps } from "@/drizzle/schema";
 
@@ -18,22 +18,38 @@ export async function GET(req: Request) {
   const org = searchParams.get("org");
   if (!org) return NextResponse.json({ error: "org required" }, { status: 400 });
 
+  const session = await auth();
+  const token =
+    (session as typeof session & { accessToken?: string })?.accessToken ??
+    process.env.GITHUB_TOKEN;
+
+  if (!token) {
+    return NextResponse.json(
+      { repos: [], error: "No GitHub token available" },
+      { status: 503 }
+    );
+  }
+
   try {
-    // Fetch all registered local paths to check which repos are already cloned
     const registered = await db.select({ githubName: apps.githubName }).from(apps);
-    const registeredSet = new Set(registered.map(r => r.githubName).filter(Boolean));
+    const registeredSet = new Set(registered.map((r) => r.githubName).filter(Boolean));
 
     const isPersonal = searchParams.get("personal") === "1";
     const endpoint = isPersonal
-      ? `/user/repos?type=owner&sort=updated&per_page=100`
+      ? "/user/repos?type=owner&sort=updated&per_page=100"
       : `/orgs/${org}/repos?sort=updated&per_page=100`;
 
-    const raw = execSync(
-      `gh api "${endpoint}" --jq '[.[] | {name, full_name, private, description, pushed_at, language}]'`,
-      { encoding: "utf-8", timeout: 15_000 }
-    );
+    const res = await fetch(`https://api.github.com${endpoint}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`GitHub API ${endpoint}: ${res.status}`);
 
-    const repos = JSON.parse(raw) as Array<{
+    const repos = (await res.json()) as Array<{
       name: string;
       full_name: string;
       private: boolean;
@@ -42,7 +58,7 @@ export async function GET(req: Request) {
       language: string | null;
     }>;
 
-    const result: GithubRepo[] = repos.map(r => ({
+    const result: GithubRepo[] = repos.map((r) => ({
       name: r.name,
       fullName: r.full_name,
       private: r.private,

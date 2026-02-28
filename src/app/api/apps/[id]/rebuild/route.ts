@@ -3,6 +3,8 @@ import { db } from "@/drizzle";
 import { apps } from "@/drizzle/schema";
 import { eq } from "drizzle-orm";
 import { installDeps } from "@/lib/process-manager";
+import { getAgent, sendToAgent, toAppConfig } from "@/lib/agent-ws";
+import crypto from "crypto";
 
 export async function POST(
   _req: Request,
@@ -15,8 +17,12 @@ export async function POST(
   const [app] = await db.select().from(apps).where(eq(apps.id, appId));
   if (!app?.localPath) return NextResponse.json({ error: "No local path" }, { status: 404 });
 
-  // Fire and forget — streams output to log viewer
-  installDeps(appId, true).catch(() => {});
+  const agent = getAgent();
+  if (agent) {
+    sendToAgent({ type: "install", requestId: crypto.randomUUID(), app: toAppConfig(app), force: true });
+    return NextResponse.json({ ok: true });
+  }
 
+  installDeps(appId, true).catch(() => {});
   return NextResponse.json({ ok: true });
 }

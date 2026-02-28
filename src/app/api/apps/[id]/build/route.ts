@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/drizzle";
+import { apps } from "@/drizzle/schema";
+import { eq } from "drizzle-orm";
 import { buildApp } from "@/lib/process-manager";
+import { getAgent, sendToAgent, toAppConfig } from "@/lib/agent-ws";
+import crypto from "crypto";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -8,12 +13,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { thenStart } = await req.json().catch(() => ({ thenStart: false }));
 
-  try {
-    // Build is async — fire and forget so the client gets an immediate response
-    // Logs stream to process_logs which the log viewer can tail
-    buildApp(appId, thenStart === true).catch(() => {});
+  const agent = getAgent();
+  if (agent) {
+    const [app] = await db.select().from(apps).where(eq(apps.id, appId));
+    if (!app) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    sendToAgent({ type: "build", requestId: crypto.randomUUID(), app: toAppConfig(app), thenStart: thenStart === true });
     return NextResponse.json({ ok: true, thenStart: thenStart === true });
-  } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Build failed" }, { status: 500 });
   }
+
+  buildApp(appId, thenStart === true).catch(() => {});
+  return NextResponse.json({ ok: true, thenStart: thenStart === true });
 }

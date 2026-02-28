@@ -4,6 +4,8 @@ import { apps } from "@/drizzle/schema";
 import { eq } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
+import { getAgent, sendCommand } from "@/lib/agent-ws";
+import crypto from "crypto";
 
 export async function GET(
   _req: Request,
@@ -17,6 +19,15 @@ export async function GET(
   if (!app?.localPath) return NextResponse.json({ error: "No local path" }, { status: 404 });
 
   const readmePath = path.join(app.localPath, "README.md");
+
+  const agent = getAgent();
+  if (agent) {
+    const event = await sendCommand({ type: "readFile", requestId: crypto.randomUUID(), path: readmePath });
+    if (event.type === "ack") return NextResponse.json({ error: "No README.md found" }, { status: 404 });
+    if (event.type === "fileContent") return NextResponse.json({ content: event.content, name: app.name });
+    return NextResponse.json({ error: "Unexpected agent response" }, { status: 500 });
+  }
+
   if (!fs.existsSync(readmePath)) {
     return NextResponse.json({ error: "No README.md found" }, { status: 404 });
   }
