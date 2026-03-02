@@ -176,7 +176,7 @@ export function AppDashboard({ apps: initialApps }: Props) {
       if (frameworkFilters.size > 0 && (!app.framework || !frameworkFilters.has(app.framework))) return false;
       if (typeFilters.size > 0 && (!app.projectType || !typeFilters.has(app.projectType))) return false;
       const q = query.trim().toLowerCase();
-      if (q && !app.name.toLowerCase().includes(q)) return false;
+      if (q && !app.name.toLowerCase().includes(q) && !String(app.port ?? "").includes(q)) return false;
       return true;
     });
 

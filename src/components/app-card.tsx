@@ -74,10 +74,10 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
             <button
               onClick={copyName}
               title={`Copy "${app.githubName ?? app.name}"`}
-              className="flex items-center gap-1 min-w-0 group/name hover:opacity-80 transition-opacity"
+              className="flex items-center gap-1 min-w-0 cursor-copy hover:opacity-70 transition-opacity"
             >
               <p className="text-sm font-semibold truncate leading-tight text-left">{app.name}</p>
-              <span className="shrink-0 opacity-0 group-hover/name:opacity-60 transition-opacity">
+              <span className="shrink-0 opacity-30 transition-opacity">
                 {copied
                   ? <Check className="h-3 w-3 text-green-500 opacity-100!" />
                   : <Copy className="h-3 w-3" />}
