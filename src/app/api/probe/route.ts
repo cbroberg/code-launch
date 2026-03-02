@@ -64,26 +64,30 @@ export async function POST() {
       packageManager: a.packageManager,
     }));
 
-    const event = await sendCommand(
-      { type: "probe", requestId: crypto.randomUUID(), apps: probeApps },
-      15_000
-    );
+    try {
+      const event = await sendCommand(
+        { type: "probe", requestId: crypto.randomUUID(), apps: probeApps },
+        15_000
+      );
 
-    if (event.type === "probeResult") {
-      for (const r of event.results) {
-        if (!r) continue;
-        const app = rows.find((a) => a.id === r.appId);
-        if (!app) continue;
-        if (r.status === "running" && app.status !== "running") {
-          await db.update(apps).set({ status: "running", pid: r.pid, updatedAt: now }).where(eq(apps.id, r.appId));
-          statusEmitter.emit("status", { appId: r.appId, status: "running", pid: r.pid });
-          updated++;
-        } else if (r.status === "stopped" && app.status === "running") {
-          await db.update(apps).set({ status: "stopped", pid: null, updatedAt: now }).where(eq(apps.id, r.appId));
-          statusEmitter.emit("status", { appId: r.appId, status: "stopped", pid: null });
-          updated++;
+      if (event.type === "probeResult") {
+        for (const r of event.results) {
+          if (!r) continue;
+          const app = rows.find((a) => a.id === r.appId);
+          if (!app) continue;
+          if (r.status === "running" && app.status !== "running") {
+            await db.update(apps).set({ status: "running", pid: r.pid, updatedAt: now }).where(eq(apps.id, r.appId));
+            statusEmitter.emit("status", { appId: r.appId, status: "running", pid: r.pid });
+            updated++;
+          } else if (r.status === "stopped" && (app.status === "running" || app.status === "starting")) {
+            await db.update(apps).set({ status: "stopped", pid: null, updatedAt: now }).where(eq(apps.id, r.appId));
+            statusEmitter.emit("status", { appId: r.appId, status: "stopped", pid: null });
+            updated++;
+          }
         }
       }
+    } catch {
+      // Agent disconnected during probe — statuses will reconcile on next probe or agent reconnect
     }
 
     return NextResponse.json({ probed: rows.length, updated });

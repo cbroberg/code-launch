@@ -74,11 +74,13 @@ export async function register() {
     console.log("[auto-boot] Agent mode — boot delegated to agent on connect");
   }
 
-  // Delayed probe: after server is fully ready, fix any remaining incorrect statuses
-  setTimeout(async () => {
-    try {
-      await fetch(`http://127.0.0.1:${ownPort}/api/probe`, { method: "POST" });
-      console.log("[auto-boot] Post-startup probe complete");
-    } catch { /* ignore */ }
-  }, 8000);
+  // Probe at 10s and again at 60s to catch slow-starting apps (e.g. Next.js with fresh build)
+  for (const delay of [10_000, 60_000]) {
+    setTimeout(async () => {
+      try {
+        await fetch(`http://127.0.0.1:${ownPort}/api/probe`, { method: "POST" });
+        console.log(`[auto-boot] Probe complete (${delay / 1000}s)`);
+      } catch { /* ignore */ }
+    }, delay);
+  }
 }
