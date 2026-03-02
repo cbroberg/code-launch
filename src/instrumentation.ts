@@ -74,13 +74,19 @@ export async function register() {
     console.log("[auto-boot] Agent mode — boot delegated to agent on connect");
   }
 
-  // Probe at 10s and again at 60s to catch slow-starting apps (e.g. Next.js with fresh build)
-  for (const delay of [10_000, 60_000]) {
-    setTimeout(async () => {
-      try {
-        await fetch(`http://127.0.0.1:${ownPort}/api/probe`, { method: "POST" });
-        console.log(`[auto-boot] Probe complete (${delay / 1000}s)`);
-      } catch { /* ignore */ }
-    }, delay);
-  }
+  const probe = () =>
+    fetch(`http://127.0.0.1:${ownPort}/api/probe`, { method: "POST" }).catch(() => {});
+
+  // Probe at 10s and 60s to catch slow-starting apps (e.g. Next.js fresh build),
+  // then continuously every 60s to detect crashes and keep status accurate.
+  setTimeout(async () => {
+    await probe();
+    console.log("[auto-boot] Post-startup probe complete");
+    setInterval(probe, 60_000);
+  }, 10_000);
+
+  setTimeout(async () => {
+    await probe();
+    console.log("[auto-boot] Probe complete (60s)");
+  }, 60_000);
 }
