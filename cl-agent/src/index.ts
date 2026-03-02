@@ -58,12 +58,14 @@ function connect(): void {
       send({ type: "status", appId, status: "running", pid });
     }
 
-    // Heartbeat ping every 30s
+    // Heartbeat: application-level ping + WS-level ping every 25s
+    // (Fly.io drops idle connections after ~75s without activity)
     pingInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
+        ws.ping();
         ws.send(JSON.stringify({ type: "ping" }));
       }
-    }, 30_000);
+    }, 25_000);
   });
 
   ws.on("message", (data: WebSocket.RawData) => {

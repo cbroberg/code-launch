@@ -1,9 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import {
   Play, Square, RotateCcw, Loader2,
   ExternalLink, Pencil, Trash2, Terminal, Rocket, Heart,
-  Hammer, Package, MoreHorizontal, Bot, FileText, Wrench,
+  Hammer, Package, MoreHorizontal, Bot, FileText, Wrench, Copy, Check,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -42,6 +43,13 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
   const isRunning = app.status === "running";
   const isStarting = app.status === "starting";
   const isError = app.status === "error";
+  const [copied, setCopied] = useState(false);
+
+  function copyName() {
+    navigator.clipboard.writeText(app.githubName ?? app.name);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
 
   return (
     <div className={cn(
@@ -61,7 +69,18 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
               "bg-red-500": isError,
               "bg-zinc-600": !app.status || app.status === "stopped",
             })} />
-            <p className="text-sm font-semibold truncate leading-tight">{app.name}</p>
+            <button
+              onClick={copyName}
+              title={`Copy "${app.githubName ?? app.name}"`}
+              className="flex items-center gap-1 min-w-0 group/name hover:opacity-80 transition-opacity"
+            >
+              <p className="text-sm font-semibold truncate leading-tight text-left">{app.name}</p>
+              <span className="shrink-0 opacity-0 group-hover/name:opacity-60 transition-opacity">
+                {copied
+                  ? <Check className="h-3 w-3 text-green-500 opacity-100!" />
+                  : <Copy className="h-3 w-3" />}
+              </span>
+            </button>
           </div>
           {app.port && (
             <span className="text-xs font-mono text-muted-foreground shrink-0">:{app.port}</span>

@@ -18,9 +18,13 @@ export async function POST(
   if (agent) {
     const [app] = await db.select().from(apps).where(eq(apps.id, appId));
     if (!app) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const event = await sendCommand({ type: "stop", requestId: crypto.randomUUID(), app: toAppConfig(app) });
-    if (event.type === "ack" && !event.ok) return NextResponse.json({ error: event.error }, { status: 500 });
-    return NextResponse.json({ ok: true });
+    try {
+      const event = await sendCommand({ type: "stop", requestId: crypto.randomUUID(), app: toAppConfig(app) });
+      if (event.type === "ack" && !event.ok) return NextResponse.json({ error: event.error }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : "Agent error" }, { status: 502 });
+    }
   }
 
   try {
