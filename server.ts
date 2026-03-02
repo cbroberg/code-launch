@@ -41,8 +41,9 @@ async function main() {
     }
   });
 
-  server.listen(port, () => {
-    console.log(`> Ready on http://localhost:${port}`);
+  const host = process.env.NODE_ENV === "production" ? "0.0.0.0" : "localhost";
+  server.listen(port, host, () => {
+    console.log(`> Ready on http://${host}:${port}`);
   });
 }
 
