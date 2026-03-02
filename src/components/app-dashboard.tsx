@@ -251,13 +251,21 @@ export function AppDashboard({ apps: initialApps }: Props) {
       toast.error("No dev command — run Scan first");
       return;
     }
+    // Optimistic UI — show transitional state immediately
+    if (action === "start" || action === "restart") {
+      setApps(prev => prev.map(a => a.id === app.id ? { ...a, status: "starting" } : a));
+    } else if (action === "stop") {
+      setApps(prev => prev.map(a => a.id === app.id ? { ...a, status: "stopping" } : a));
+    }
     setActionLoading(p => ({ ...p, [app.id]: action }));
     try {
       const res = await fetch(`/api/apps/${app.id}/${action}`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `${action} failed`);
-      router.refresh();
+      // SSE will update status — no router.refresh() needed
     } catch (err) {
+      // Revert optimistic update on error
+      setApps(prev => prev.map(a => a.id === app.id ? { ...a, status: app.status } : a));
       toast.error(err instanceof Error ? err.message : `${action} failed`);
     } finally {
       setActionLoading(p => { const n = { ...p }; delete n[app.id]; return n; });

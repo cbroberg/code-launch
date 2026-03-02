@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   Play, Square, RotateCcw, Loader2,
   ExternalLink, Pencil, Trash2, Terminal, Rocket, Heart,
-  Hammer, Package, MoreHorizontal, Bot, FileText, Wrench, Copy, Check,
+  Hammer, Package, MoreHorizontal, Bot, FileText, Wrench, Copy, Check, Loader,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -42,7 +42,9 @@ interface Props {
 export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, onToggleAutoBoot, onToggleFavorite, onEdit, onDelete, onShowLogs, onShowReadme }: Props) {
   const isRunning = app.status === "running";
   const isStarting = app.status === "starting";
+  const isStopping = app.status === "stopping";
   const isError = app.status === "error";
+  const isTransitioning = isStarting || isStopping;
   const [copied, setCopied] = useState(false);
 
   function copyName() {
@@ -65,7 +67,7 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
           <div className="flex items-center gap-2 min-w-0">
             <span className={cn("mt-0.5 h-2 w-2 rounded-full shrink-0", {
               "bg-green-500": isRunning,
-              "bg-yellow-400 animate-pulse": isStarting,
+              "bg-yellow-400 animate-pulse": isTransitioning,
               "bg-red-500": isError,
               "bg-zinc-600": !app.status || app.status === "stopped",
             })} />
@@ -182,6 +184,12 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
             </a>
           )}
           <CardAction onClick={() => onShowLogs(app)} title="Logs" icon={<Terminal className="h-3.5 w-3.5" />} />
+          <CardAction
+            onClick={() => onToggleAutoBoot(app)}
+            title={app.autoBoot ? "Auto-boot: on" : "Auto-boot: off"}
+            icon={<Rocket className={cn("h-3.5 w-3.5", app.autoBoot ? "text-primary" : "")} />}
+            className={app.autoBoot ? "text-primary hover:text-primary/80 hover:bg-primary/10" : undefined}
+          />
           <CardAction
             onClick={() => onToggleFavorite(app)}
             title={app.favorite ? "Remove from favorites" : "Add to favorites"}

@@ -179,6 +179,32 @@ async function handleEvent(conn: AgentConn, event: AgentEvent): Promise<void> {
             updatedAt: now,
           },
         });
+
+      // Auto-boot: start apps marked autoBoot that are currently stopped/error
+      setTimeout(async () => {
+        try {
+          const { apps: appsTable } = await import("@/drizzle/schema");
+          const { eq, and, inArray } = await import("drizzle-orm");
+          const bootApps = await db
+            .select()
+            .from(appsTable)
+            .where(and(
+              eq(appsTable.autoBoot, true),
+              inArray(appsTable.status, ["stopped", "error"]),
+            ));
+          for (const app of bootApps) {
+            if (!app.devCommand || !app.localPath) continue;
+            console.log(`[auto-boot] Starting "${app.name}" via agent`);
+            sendToAgent({
+              type: "start",
+              requestId: crypto.randomUUID(),
+              app: toAppConfig(app),
+            });
+          }
+        } catch (err) {
+          console.error("[auto-boot] Error:", err);
+        }
+      }, 3000); // 3s delay to let agent settle
       break;
 
     case "status":

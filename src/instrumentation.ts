@@ -17,58 +17,61 @@ export async function register() {
   // Our own port — we're the server, so we know we're running
   const ownPort = parseInt(process.env.PORT || "4200", 10);
 
-  // Start all autoBoot apps that have a devCommand
-  const bootApps = await db
-    .select()
-    .from(apps)
-    .where(and(eq(apps.autoBoot, true)));
+  // Auto-boot: only start locally when running without a remote agent
+  // (when CL_AGENT_TOKEN is set, the agent handles auto-boot on connect)
+  const useAgent = !!process.env.CL_AGENT_TOKEN;
 
-  for (const app of bootApps) {
-    if (!app.devCommand || !app.localPath) continue;
+  if (!useAgent) {
+    const bootApps = await db
+      .select()
+      .from(apps)
+      .where(and(eq(apps.autoBoot, true)));
 
-    if (app.port && listening.has(app.port)) {
-      // Own port: server is us, mark running immediately (HTTP not available yet)
-      if (app.port === ownPort) {
-        await db
-          .update(apps)
-          .set({ status: "running", updatedAt: new Date().toISOString() })
-          .where(eq(apps.id, app.id));
-        console.log(`[auto-boot] "${app.name}" is this server — marked running`);
+    for (const app of bootApps) {
+      if (!app.devCommand || !app.localPath) continue;
+
+      if (app.port && listening.has(app.port)) {
+        if (app.port === ownPort) {
+          await db
+            .update(apps)
+            .set({ status: "running", updatedAt: new Date().toISOString() })
+            .where(eq(apps.id, app.id));
+          console.log(`[auto-boot] "${app.name}" is this server — marked running`);
+          continue;
+        }
+
+        let up = false;
+        try {
+          await fetch(`http://127.0.0.1:${app.port}/`, {
+            signal: AbortSignal.timeout(2500),
+            redirect: "manual",
+          });
+          up = true;
+        } catch { /* not responding */ }
+
+        if (up) {
+          await db
+            .update(apps)
+            .set({ status: "running", updatedAt: new Date().toISOString() })
+            .where(eq(apps.id, app.id));
+          console.log(`[auto-boot] "${app.name}" verified on port ${app.port} — marked running`);
+        } else {
+          console.log(`[auto-boot] "${app.name}" port ${app.port} not responding — starting fresh`);
+          await new Promise(r => setTimeout(r, 500));
+          startProcess(app.id).catch(err => {
+            console.error(`[auto-boot] Failed to start "${app.name}":`, err.message);
+          });
+        }
         continue;
       }
 
-      // Other ports: HTTP-verify to avoid false positives
-      let up = false;
-      try {
-        await fetch(`http://127.0.0.1:${app.port}/`, {
-          signal: AbortSignal.timeout(2500),
-          redirect: "manual",
-        });
-        up = true;
-      } catch { /* not responding */ }
-
-      if (up) {
-        await db
-          .update(apps)
-          .set({ status: "running", updatedAt: new Date().toISOString() })
-          .where(eq(apps.id, app.id));
-        console.log(`[auto-boot] "${app.name}" verified on port ${app.port} — marked running`);
-      } else {
-        console.log(`[auto-boot] "${app.name}" port ${app.port} not responding — starting fresh`);
-        // Fall through to startProcess below
-        await new Promise(r => setTimeout(r, 500));
-        startProcess(app.id).catch(err => {
-          console.error(`[auto-boot] Failed to start "${app.name}":`, err.message);
-        });
-      }
-      continue;
+      await new Promise(r => setTimeout(r, 500));
+      startProcess(app.id).catch(err => {
+        console.error(`[auto-boot] Failed to start "${app.name}":`, err.message);
+      });
     }
-
-    // Port not in use — start it
-    await new Promise(r => setTimeout(r, 500));
-    startProcess(app.id).catch(err => {
-      console.error(`[auto-boot] Failed to start "${app.name}":`, err.message);
-    });
+  } else {
+    console.log("[auto-boot] Agent mode — boot delegated to agent on connect");
   }
 
   // Delayed probe: after server is fully ready, fix any remaining incorrect statuses
