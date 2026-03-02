@@ -1,6 +1,22 @@
 import { spawn, execSync, type ChildProcess, type SpawnOptions } from "child_process";
+import path from "path";
 import type { AppConfig, AgentEvent, ProbeResult, ProbeableApp } from "./types";
 import { getPidsOnPort, getListeningPortForPid } from "./port-utils";
+
+// Build a rich PATH for child processes: include node's own bin dir (fnm/nvm)
+// so that pnpm, npm, bun etc. installed alongside node are always found.
+const NODE_BIN_DIR = path.dirname(process.execPath);
+const EXTRA_PATHS = [
+  NODE_BIN_DIR,
+  "/opt/homebrew/bin",
+  "/usr/local/bin",
+  "/usr/bin",
+  "/bin",
+];
+const CHILD_PATH = [...new Set([
+  ...EXTRA_PATHS,
+  ...(process.env.PATH || "").split(":").filter(Boolean),
+])].join(":");
 
 // ---------------------------------------------------------------------------
 // Global singleton (process map persists across module reloads)
@@ -83,14 +99,20 @@ export function startProcess(app: AppConfig): void {
   if (!app.localPath) throw new Error("No local path configured");
 
   if (app.port && getPidsOnPort(app.port).length > 0) {
-    throw new Error(`Port ${app.port} is already in use — stop the existing process first`);
+    // Port is already occupied — likely our own detached process survived an agent restart.
+    // Adopt it instead of failing so the UI shows "running".
+    const pids = getPidsOnPort(app.port);
+    const existingPid = pids[0] ?? null;
+    appendLog(app.id, "system", `Port ${app.port} already in use by PID ${existingPid} — adopting`);
+    setStatus(app.id, "running", existingPid);
+    return;
   }
 
   const now = new Date().toISOString();
   setStatus(app.id, "starting");
   appendLog(app.id, "system", `Starting: ${app.devCommand}`);
 
-  const env = { ...process.env };
+  const env: NodeJS.ProcessEnv = { ...process.env, PATH: CHILD_PATH };
   if (app.port) env.PORT = String(app.port);
 
   const spawnOpts: SpawnOptions = {
@@ -206,7 +228,7 @@ async function runJob(appId: number, cmd: string, cwd: string): Promise<number> 
     const child = spawn("/bin/bash", ["-c", cmd], {
       cwd,
       detached: false,
-      env: { ...process.env },
+      env: { ...process.env, PATH: CHILD_PATH },
       stdio: ["ignore", "pipe", "pipe"],
     });
     if (child.stdout) {

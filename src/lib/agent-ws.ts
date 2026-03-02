@@ -180,7 +180,7 @@ async function handleEvent(conn: AgentConn, event: AgentEvent): Promise<void> {
           },
         });
 
-      // Auto-boot: start apps marked autoBoot that are currently stopped/error
+      // Auto-boot: probe first, then only start apps that aren't already running
       setTimeout(async () => {
         try {
           const { apps: appsTable } = await import("@/drizzle/schema");
@@ -192,7 +192,46 @@ async function handleEvent(conn: AgentConn, event: AgentEvent): Promise<void> {
               eq(appsTable.autoBoot, true),
               inArray(appsTable.status, ["stopped", "error"]),
             ));
+          if (bootApps.length === 0) return;
+
+          // Ask the agent to probe these apps before blindly starting them
+          const probeables = bootApps.map((a) => ({
+            id: a.id,
+            name: a.name,
+            port: a.port,
+            pid: a.pid,
+            localPath: a.localPath,
+            devCommand: a.devCommand,
+            packageManager: a.packageManager,
+          }));
+
+          let alreadyRunning = new Set<number>();
+          try {
+            const probeEvent = await sendCommand(
+              { type: "probe", requestId: crypto.randomUUID(), apps: probeables },
+              10_000
+            );
+            if (probeEvent.type === "probeResult") {
+              const probeNow = new Date().toISOString();
+              for (const r of probeEvent.results) {
+                if (r.status === "running") {
+                  alreadyRunning.add(r.appId);
+                  await db
+                    .update(appsTable)
+                    .set({ status: "running", pid: r.pid, updatedAt: probeNow })
+                    .where(eq(appsTable.id, r.appId));
+                  statusEmitter.emit("status", { appId: r.appId, status: "running", pid: r.pid });
+                  const a = bootApps.find((x) => x.id === r.appId);
+                  console.log(`[auto-boot] "${a?.name}" already running on port ${a?.port} — adopted`);
+                }
+              }
+            }
+          } catch {
+            // Probe failed — proceed with blind start (startProcess will adopt if port busy)
+          }
+
           for (const app of bootApps) {
+            if (alreadyRunning.has(app.id)) continue;
             if (!app.devCommand || !app.localPath) continue;
             console.log(`[auto-boot] Starting "${app.name}" via agent`);
             sendToAgent({
