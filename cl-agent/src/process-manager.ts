@@ -31,6 +31,15 @@ interface ManagedProcess {
 
 const processMap = new Map<number, ManagedProcess>();
 
+// App IDs explicitly stopped by the user — no auto-restart for these.
+const intentionallyStopped = new Set<number>();
+
+// Crash counter for auto-restart backoff: appId → { count, firstCrashAt }
+const crashLog = new Map<number, { count: number; windowStart: number }>();
+
+const MAX_RESTARTS = 5;        // give up after 5 crashes
+const CRASH_WINDOW_MS = 300_000; // within a 5-minute window
+
 // ---------------------------------------------------------------------------
 // Event sender — updated when WS connects/reconnects
 // ---------------------------------------------------------------------------
@@ -97,6 +106,10 @@ export function startProcess(app: AppConfig): void {
   if (processMap.has(app.id)) throw new Error("Already running");
   if (!app.devCommand) throw new Error("No dev command configured");
   if (!app.localPath) throw new Error("No local path configured");
+
+  // Clear stop/crash state when (re)starting manually or via auto-restart.
+  intentionallyStopped.delete(app.id);
+  crashLog.delete(app.id);
 
   if (app.port && getPidsOnPort(app.port).length > 0) {
     // Port is already occupied — likely our own detached process survived an agent restart.
@@ -165,15 +178,55 @@ export function startProcess(app: AppConfig): void {
   child.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
     processMap.delete(app.id);
     const msg = signal ? `Killed by signal ${signal}` : `Exited with code ${code}`;
-    const newStatus = code === 0 || signal === "SIGTERM" ? "stopped" : "error";
-    setStatus(app.id, newStatus);
-    appendLog(app.id, "system", msg);
+
+    // User pressed Stop — no restart.
+    if (intentionallyStopped.has(app.id)) {
+      intentionallyStopped.delete(app.id);
+      crashLog.delete(app.id);
+      setStatus(app.id, "stopped");
+      appendLog(app.id, "system", msg);
+      return;
+    }
+
+    // Normal clean exit (code 0) — treat as stopped, no restart.
+    if (code === 0) {
+      crashLog.delete(app.id);
+      setStatus(app.id, "stopped");
+      appendLog(app.id, "system", msg);
+      return;
+    }
+
+    // Unexpected exit — auto-restart with exponential backoff.
+    const now = Date.now();
+    const prev = crashLog.get(app.id);
+    const inWindow = prev && (now - prev.windowStart) < CRASH_WINDOW_MS;
+    const count = inWindow ? prev.count + 1 : 1;
+    crashLog.set(app.id, { count, windowStart: inWindow ? prev.windowStart : now });
+
+    if (count > MAX_RESTARTS) {
+      crashLog.delete(app.id);
+      setStatus(app.id, "error");
+      appendLog(app.id, "system", `${msg} — crashed ${MAX_RESTARTS} times, giving up`);
+      return;
+    }
+
+    const delay = Math.min(3_000 * Math.pow(2, count - 1), 60_000); // 3s, 6s, 12s, 24s, 48s
+    appendLog(app.id, "system", `${msg} — restarting in ${Math.round(delay / 1000)}s (${count}/${MAX_RESTARTS})`);
+    setStatus(app.id, "starting");
+
+    setTimeout(() => {
+      if (intentionallyStopped.has(app.id)) return; // stopped while waiting
+      startProcess(app);
+    }, delay);
   });
 
   processMap.set(app.id, { process: child, appId: app.id, app, startedAt: now });
 }
 
 export async function stopProcess(app: AppConfig): Promise<void> {
+  // Mark as intentionally stopped so the exit handler skips auto-restart.
+  intentionallyStopped.add(app.id);
+
   const managed = processMap.get(app.id);
 
   if (!managed) {
