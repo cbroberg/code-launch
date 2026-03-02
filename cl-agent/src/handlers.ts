@@ -155,7 +155,7 @@ export async function handleCommand(cmd: AgentCommand, send: Send): Promise<void
           return { appId: app.id, status: "stopped" as const, pid: null };
         })
       );
-      send({ type: "probeResult", requestId: cmd.requestId, results: results.filter(Boolean) as typeof results });
+      send({ type: "probeResult", requestId: cmd.requestId, results: results.filter((r): r is NonNullable<typeof r> => r !== null) });
       return;
     }
 

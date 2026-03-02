@@ -69,6 +69,11 @@ Create a GitHub OAuth App at [github.com/settings/developers](https://github.com
 | Homepage URL | `http://localhost:4200` |
 | Authorization callback URL | `http://localhost:4200/api/auth/callback/github` |
 
+If you also deploy to Fly.io, add a second callback URL on the same OAuth App:
+```
+https://cl-web.fly.dev/api/auth/callback/github
+```
+
 ---
 
 ## Fly.io Deploy
@@ -106,20 +111,32 @@ https://cl-web.fly.dev/api/auth/callback/github
 
 `cl-agent` is a small Node.js daemon that runs on your Mac and connects to the web app via WebSocket. It handles all OS-specific operations (process management, Docker, filesystem scanning) so the web app can run in the cloud.
 
+### Install as macOS LaunchAgent (auto-start at login)
+
 ```bash
 cd cl-agent
-npm install
 
-# Configure
-cp .env.example .env
-# Set CL_AGENT_URL=wss://cl-web.fly.dev/api/agent/ws
-# Set CL_AGENT_TOKEN=<same token set in fly secrets>
+CL_WEB_URL=wss://cl-web.fly.dev/api/agent/ws \
+CL_AGENT_TOKEN=<same token set in fly secrets> \
+bash install.sh
+```
 
-# Run manually
-npm start
+`install.sh` will build the agent, write a LaunchAgent plist to `~/Library/LaunchAgents/`, and start it immediately.
 
-# Install as macOS LaunchAgent (auto-start at login)
-./install.sh
+### Manage
+
+```bash
+# View logs
+tail -f ~/Library/Logs/cl-agent/stdout.log
+
+# Status
+launchctl list com.cbroberg.cl-agent
+
+# Stop
+launchctl unload ~/Library/LaunchAgents/com.cbroberg.cl-agent.plist
+
+# Start
+launchctl load ~/Library/LaunchAgents/com.cbroberg.cl-agent.plist
 ```
 
 When `cl-agent` is connected, all project operations (start, stop, scan, docker, etc.) are relayed through it. The web app falls back to direct local execution when no agent is connected (localhost use).
