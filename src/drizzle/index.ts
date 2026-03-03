@@ -27,6 +27,7 @@ sqlite.exec(`
     pid INTEGER,
     last_started_at TEXT,
     last_error TEXT,
+    manual_stop INTEGER DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -51,5 +52,8 @@ sqlite.exec(`
     updated_at TEXT NOT NULL
   );
 `);
+
+// Idempotent column additions for existing databases
+try { sqlite.exec(`ALTER TABLE apps ADD COLUMN manual_stop INTEGER DEFAULT 0`); } catch { /* already exists */ }
 
 export const db = drizzle(sqlite, { schema });

@@ -16,6 +16,7 @@ export const apps = sqliteTable("apps", {
   // Process management
   favorite: integer("favorite", { mode: "boolean" }).default(false),
   autoBoot: integer("auto_boot", { mode: "boolean" }).default(false),
+  manualStop: integer("manual_stop", { mode: "boolean" }).default(false),
   status: text("status").default("stopped"), // "stopped" | "starting" | "running" | "error"
   pid: integer("pid"),
   lastStartedAt: text("last_started_at"),

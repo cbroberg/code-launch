@@ -83,8 +83,8 @@ export async function POST() {
             await db.update(apps).set({ status: "stopped", pid: null, updatedAt: now }).where(eq(apps.id, r.appId));
             statusEmitter.emit("status", { appId: r.appId, status: "stopped", pid: null });
             updated++;
-            // Auto-boot: if this app should be running, restart it immediately
-            if (app.autoBoot && app.devCommand && app.localPath) {
+            // Auto-boot: restart unless user manually stopped it
+            if (app.autoBoot && !app.manualStop && app.devCommand && app.localPath) {
               console.log(`[probe] "${app.name}" stopped unexpectedly — restarting via agent`);
               sendToAgent({ type: "start", requestId: crypto.randomUUID(), app: toAppConfig(app) });
             }

@@ -14,6 +14,9 @@ export async function POST(
   const appId = parseInt(id, 10);
   if (isNaN(appId)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
 
+  // User explicitly started — clear the manual-stop flag
+  await db.update(apps).set({ manualStop: false, updatedAt: new Date().toISOString() }).where(eq(apps.id, appId));
+
   const agent = getAgent();
   if (agent) {
     const [app] = await db.select().from(apps).where(eq(apps.id, appId));

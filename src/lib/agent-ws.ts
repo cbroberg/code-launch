@@ -184,12 +184,13 @@ async function handleEvent(conn: AgentConn, event: AgentEvent): Promise<void> {
       setTimeout(async () => {
         try {
           const { apps: appsTable } = await import("@/drizzle/schema");
-          const { eq, and, inArray } = await import("drizzle-orm");
+          const { eq, and, inArray, ne } = await import("drizzle-orm");
           const bootApps = await db
             .select()
             .from(appsTable)
             .where(and(
               eq(appsTable.autoBoot, true),
+              ne(appsTable.manualStop, true),
               inArray(appsTable.status, ["stopped", "error"]),
             ));
           if (bootApps.length === 0) return;
