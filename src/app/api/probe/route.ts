@@ -4,7 +4,7 @@ import { db } from "@/drizzle";
 import { apps } from "@/drizzle/schema";
 import { isNotNull, isNull, eq, and, inArray } from "drizzle-orm";
 import { processMap, statusEmitter } from "@/lib/process-manager";
-import { getAgent, sendCommand } from "@/lib/agent-ws";
+import { getAgent, sendCommand, sendToAgent, toAppConfig } from "@/lib/agent-ws";
 import crypto from "crypto";
 
 async function isHttpUp(port: number): Promise<boolean> {
@@ -83,6 +83,11 @@ export async function POST() {
             await db.update(apps).set({ status: "stopped", pid: null, updatedAt: now }).where(eq(apps.id, r.appId));
             statusEmitter.emit("status", { appId: r.appId, status: "stopped", pid: null });
             updated++;
+            // Auto-boot: if this app should be running, restart it immediately
+            if (app.autoBoot && app.devCommand && app.localPath) {
+              console.log(`[probe] "${app.name}" stopped unexpectedly — restarting via agent`);
+              sendToAgent({ type: "start", requestId: crypto.randomUUID(), app: toAppConfig(app) });
+            }
           }
         }
       }
