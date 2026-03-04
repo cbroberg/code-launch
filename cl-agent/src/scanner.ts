@@ -282,3 +282,26 @@ export function scanApps(): ScannedApp[] {
 export function getScanRoot(): string {
   return SCAN_ROOT;
 }
+
+export function scanSingleDir(dir: string): ScannedApp | null {
+  if (!fs.existsSync(dir)) return null;
+  const packageManager = detectPackageManager(dir);
+  const framework = detectFramework(dir);
+  const runtime = detectRuntime(dir);
+  const devCommand = detectDevCommand(dir, packageManager);
+  const projectType = classifyProject(dir, framework);
+  const port = detectPort(dir);
+  const { githubName, githubUrl } = detectGithub(dir);
+  return {
+    name: path.basename(dir),
+    localPath: dir,
+    port,
+    githubName,
+    githubUrl,
+    packageManager,
+    framework,
+    runtime,
+    devCommand,
+    projectType,
+  };
+}

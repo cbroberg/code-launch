@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import { execSync } from "child_process";
 import { z } from "zod";
 import { db } from "@/drizzle";
 import { apps } from "@/drizzle/schema";
-import { eq } from "drizzle-orm";
-import { findVacantPort } from "@/lib/port-utils";
-import { scanSingleDir } from "@/lib/scanner";
+import { eq, isNotNull } from "drizzle-orm";
+import { getAgent, sendCommand } from "@/lib/agent-ws";
+import crypto from "crypto";
 
 const schema = z.object({
   fullName: z.string().min(1),  // e.g. "cbroberg/my-app"
@@ -19,54 +18,66 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  const agent = getAgent();
+  if (!agent) {
+    return NextResponse.json(
+      { error: "No agent connected — make sure cl-agent is running on your Mac" },
+      { status: 503 }
+    );
+  }
+
   const { fullName, localBase } = parsed.data;
   const repoName = fullName.split("/").pop()!;
   const localPath = `${localBase}/${repoName}`;
+  const githubUrl = `https://github.com/${fullName}`;
 
-  // Check if dir already exists
-  try {
-    execSync(`test -d "${localPath}"`, { encoding: "utf-8" });
-    // Dir exists — just register it
-  } catch {
-    // Clone it
-    try {
-      execSync(`git clone "https://github.com/${fullName}.git" "${localPath}"`, {
-        encoding: "utf-8",
-        timeout: 120_000,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return NextResponse.json({ error: `git clone failed: ${msg}` }, { status: 500 });
-    }
-  }
-
-  // Check if already registered
+  // Check if already registered in DB
   const [existing] = await db.select().from(apps).where(eq(apps.localPath, localPath));
   if (existing) {
     return NextResponse.json({ app: existing, alreadyRegistered: true });
   }
 
-  const port = await findVacantPort();
-  const meta = scanSingleDir(localPath);
-  const now = new Date().toISOString();
+  // Pass DB-registered ports so the agent can pick a non-conflicting port
+  const portRows = await db.select({ port: apps.port }).from(apps).where(isNotNull(apps.port));
+  const usedPorts = portRows.map(r => r.port as number);
 
-  const [inserted] = await db
-    .insert(apps)
-    .values({
-      name: repoName,
-      githubName: fullName,
-      githubUrl: `https://github.com/${fullName}`,
-      port,
-      localPath,
-      packageManager: meta?.packageManager ?? null,
-      framework: meta?.framework ?? null,
-      runtime: meta?.runtime ?? null,
-      devCommand: meta?.devCommand ?? null,
-      projectType: meta?.projectType ?? null,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
+  try {
+    const event = await sendCommand(
+      { type: "importProject", requestId: crypto.randomUUID(), githubUrl, localPath, usedPorts },
+      120_000
+    );
 
-  return NextResponse.json({ app: inserted, port, localPath });
+    if (event.type !== "importProjectResult") {
+      return NextResponse.json({ error: "Unexpected agent response" }, { status: 502 });
+    }
+    if (!event.ok) {
+      return NextResponse.json({ error: event.error || "Import failed" }, { status: 500 });
+    }
+
+    const now = new Date().toISOString();
+    const [inserted] = await db
+      .insert(apps)
+      .values({
+        name: repoName,
+        githubName: fullName,
+        githubUrl,
+        port: event.port ?? null,
+        localPath,
+        packageManager: event.packageManager ?? null,
+        framework: event.framework ?? null,
+        runtime: event.runtime ?? null,
+        devCommand: event.devCommand ?? null,
+        projectType: event.projectType ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+
+    return NextResponse.json({ app: inserted, port: event.port, localPath });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Agent error" },
+      { status: 502 }
+    );
+  }
 }

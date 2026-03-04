@@ -42,7 +42,9 @@ export type AgentCommand =
   | { type: "docker:start"; requestId: string; containerId: string }
   | { type: "docker:stop"; requestId: string; containerId: string }
   | { type: "launchTerminal"; requestId: string; path: string }
-  | { type: "vacantPort"; requestId: string; usedPorts?: number[] };
+  | { type: "vacantPort"; requestId: string; usedPorts?: number[] }
+  | { type: "createProject"; requestId: string; githubRepo: string; localPath: string; flags: string[]; usedPorts?: number[] }
+  | { type: "importProject"; requestId: string; githubUrl: string; localPath: string; usedPorts?: number[] };
 
 // ---------------------------------------------------------------------------
 // Events: Agent → CL Web
@@ -93,4 +95,6 @@ export type AgentEvent =
   | { type: "reconcileResult"; requestId: string; statuses: ProbeResult[] }
   | { type: "fileContent"; requestId: string; content: string }
   | { type: "docker:containers"; requestId: string; containers: DockerContainer[] }
-  | { type: "vacantPort"; requestId: string; port: number };
+  | { type: "vacantPort"; requestId: string; port: number }
+  | { type: "createProjectResult"; requestId: string; ok: boolean; error?: string; port?: number; packageManager?: string | null; framework?: string | null; runtime?: string | null; devCommand?: string | null; projectType?: string | null; githubUrl?: string }
+  | { type: "importProjectResult"; requestId: string; ok: boolean; error?: string; alreadyExists?: boolean; port?: number; packageManager?: string | null; framework?: string | null; runtime?: string | null; devCommand?: string | null; projectType?: string | null };

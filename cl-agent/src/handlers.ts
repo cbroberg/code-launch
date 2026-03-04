@@ -9,7 +9,7 @@ import {
   buildApp,
   reconcileProcesses,
 } from "./process-manager";
-import { scanApps } from "./scanner";
+import { scanApps, scanSingleDir } from "./scanner";
 import { findVacantPort, getPidsOnPort } from "./port-utils";
 
 type Send = (event: AgentEvent) => void;
@@ -251,6 +251,73 @@ export async function handleCommand(cmd: AgentCommand, send: Send): Promise<void
       const extra = new Set<number>(cmd.usedPorts ?? []);
       const port = findVacantPort(extra);
       send({ type: "vacantPort", requestId: cmd.requestId, port });
+      return;
+    }
+
+    case "importProject": {
+      try {
+        const alreadyExists = fs.existsSync(cmd.localPath);
+        if (!alreadyExists) {
+          execSync(`git clone "${cmd.githubUrl}.git" "${cmd.localPath}"`, { encoding: "utf-8", timeout: 120_000 });
+        }
+        const meta = scanSingleDir(cmd.localPath);
+        const extra = new Set<number>(cmd.usedPorts ?? []);
+        const port = findVacantPort(extra);
+        send({
+          type: "importProjectResult",
+          requestId: cmd.requestId,
+          ok: true,
+          alreadyExists,
+          port,
+          packageManager: meta?.packageManager ?? null,
+          framework: meta?.framework ?? null,
+          runtime: meta?.runtime ?? null,
+          devCommand: meta?.devCommand ?? null,
+          projectType: meta?.projectType ?? null,
+        });
+      } catch (err) {
+        send({
+          type: "importProjectResult",
+          requestId: cmd.requestId,
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    case "createProject": {
+      try {
+        if (fs.existsSync(cmd.localPath)) {
+          send({ type: "createProjectResult", requestId: cmd.requestId, ok: false, error: `Directory already exists: ${cmd.localPath}` });
+          return;
+        }
+        const flags = cmd.flags.join(" ");
+        execSync(`gh repo create "${cmd.githubRepo}" ${flags}`, { encoding: "utf-8", timeout: 30_000 });
+        execSync(`git clone "https://github.com/${cmd.githubRepo}.git" "${cmd.localPath}"`, { encoding: "utf-8", timeout: 60_000 });
+        const meta = scanSingleDir(cmd.localPath);
+        const extra = new Set<number>(cmd.usedPorts ?? []);
+        const port = findVacantPort(extra);
+        send({
+          type: "createProjectResult",
+          requestId: cmd.requestId,
+          ok: true,
+          port,
+          packageManager: meta?.packageManager ?? null,
+          framework: meta?.framework ?? null,
+          runtime: meta?.runtime ?? null,
+          devCommand: meta?.devCommand ?? null,
+          projectType: meta?.projectType ?? null,
+          githubUrl: `https://github.com/${cmd.githubRepo}`,
+        });
+      } catch (err) {
+        send({
+          type: "createProjectResult",
+          requestId: cmd.requestId,
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       return;
     }
   }
