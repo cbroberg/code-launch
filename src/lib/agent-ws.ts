@@ -334,6 +334,7 @@ export function handleAgentConnection(ws: WebSocket, req: IncomingMessage): void
       conn.scanRoot = event.scanRoot;
       agentConnections.set(conn.agentId, conn);
       console.log(`[agent-ws] "${conn.name}" (${conn.agentId}) connected`);
+      statusEmitter.emit("agent", { connected: true, name: conn.name, agentId: conn.agentId });
     }
 
     handleEvent(conn, event).catch((err) =>
