@@ -24,7 +24,7 @@ import type { GithubRepo } from "@/app/api/github/repos/route";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const GITIGNORE_TEMPLATES = [
-  { value: "", label: "None" },
+  { value: "_none_", label: "None" },
   { value: "Node", label: "Node" },
   { value: "Python", label: "Python" },
   { value: "Go", label: "Go" },
@@ -33,7 +33,7 @@ const GITIGNORE_TEMPLATES = [
 ];
 
 const LICENSES = [
-  { value: "", label: "None" },
+  { value: "_none_", label: "None" },
   { value: "mit", label: "MIT" },
   { value: "apache-2.0", label: "Apache 2.0" },
   { value: "gpl-3.0", label: "GPL 3.0" },
@@ -124,6 +124,7 @@ function NewRepoTab({ orgs, orgsLoading, onClose, onDone }: {
   const [readme, setReadme] = useState(true);
   const [gitignore, setGitignore] = useState("Node");
   const [license, setLicense] = useState("mit");
+
   const [loading, setLoading] = useState(false);
 
   // Set default org when orgs load
@@ -154,8 +155,8 @@ function NewRepoTab({ orgs, orgsLoading, onClose, onDone }: {
           localBase: localBase || selectedOrg.localBase,
           private: isPrivate,
           readme,
-          gitignore,
-          license,
+          gitignore: gitignore === "_none_" ? "" : gitignore,
+          license: license === "_none_" ? "" : license,
         }),
       });
       const data = await res.json();
@@ -290,11 +291,11 @@ function NewRepoTab({ orgs, orgsLoading, onClose, onDone }: {
             <Plug className="h-3.5 w-3.5 shrink-0" />
             <span>Port auto-assigned</span>
           </div>
-          {(readme || gitignore || license) && (
+          {(readme || (gitignore && gitignore !== "_none_") || (license && license !== "_none_")) && (
             <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
               {readme && <span className="px-1.5 py-0.5 rounded bg-muted border border-border text-[10px]">README.md</span>}
-              {gitignore && <span className="px-1.5 py-0.5 rounded bg-muted border border-border text-[10px]">.gitignore ({gitignore})</span>}
-              {license && <span className="px-1.5 py-0.5 rounded bg-muted border border-border text-[10px]">{LICENSES.find(l => l.value === license)?.label}</span>}
+              {gitignore && gitignore !== "_none_" && <span className="px-1.5 py-0.5 rounded bg-muted border border-border text-[10px]">.gitignore ({gitignore})</span>}
+              {license && license !== "_none_" && <span className="px-1.5 py-0.5 rounded bg-muted border border-border text-[10px]">{LICENSES.find(l => l.value === license)?.label}</span>}
             </div>
           )}
         </div>
