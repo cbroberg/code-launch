@@ -16,6 +16,7 @@ export const updateAppSchema = z.object({
   localPath: z.string().nullable().optional(),
   favorite: z.boolean().optional(),
   autoBoot: z.boolean().optional(),
+  https: z.boolean().optional(),
   status: z.enum(["stopped", "starting", "running", "error"]).optional(),
 });
 

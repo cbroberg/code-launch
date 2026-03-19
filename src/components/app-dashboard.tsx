@@ -14,13 +14,14 @@ import {
   Terminal, Rocket, Plus, ArrowUpDown, Heart,
   Hammer, Package, Power,
   Sun, Moon, Monitor, ChevronDown,
-  MoreHorizontal, Bot, FileText, Wrench,
+  MoreHorizontal, Bot, FileText, Wrench, LogOut,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
   DropdownMenuSeparator, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { useTheme } from "next-themes";
+import { signOut } from "next-auth/react";
 import type { App } from "@/drizzle/schema";
 import { EditAppDialog } from "./edit-app-dialog";
 import { AppCard } from "./app-card";
@@ -66,6 +67,7 @@ export function AppDashboard({ apps: initialApps }: Props) {
   const searchRef = useRef<HTMLInputElement>(null);
   const [actionLoading, setActionLoading] = useState<Record<number, string>>({});
   const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null);
+  const [agentConnected, setAgentConnected] = useState<boolean | null>(null);
   const { theme, setTheme } = useTheme();
 
   // Sync when server re-renders (after router.refresh())
@@ -84,6 +86,10 @@ export function AppDashboard({ apps: initialApps }: Props) {
         type: string; appId: number;
         status?: string; pid?: number | null; port?: number | null;
       };
+      if (data.type === "agent") {
+        setAgentConnected((data as unknown as { connected: boolean }).connected);
+        return;
+      }
       if (data.type === "snapshot" || data.type === "update") {
         setApps(prev => prev.map(a =>
           a.id === data.appId
@@ -517,6 +523,19 @@ export function AppDashboard({ apps: initialApps }: Props) {
               {counts.running > 0 && <span className="ml-1.5 text-green-500">· {counts.running} running</span>}
             </span>
 
+            {/* Agent status indicator */}
+            <span
+              title={agentConnected === null ? "Agent: unknown" : agentConnected ? "cl-agent: connected" : "cl-agent: disconnected"}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              <span className={cn(
+                "h-2 w-2 rounded-full shrink-0",
+                agentConnected === null ? "bg-zinc-500" :
+                agentConnected ? "bg-green-500" : "bg-red-500"
+              )} />
+              <span className="hidden sm:inline">Agent</span>
+            </span>
+
             {/* Sort toggle */}
             <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
               <button
@@ -634,6 +653,16 @@ export function AppDashboard({ apps: initialApps }: Props) {
                   <Monitor className="h-4 w-4" />
                   System
                   {theme === "system" && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />}
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+
+                <DropdownMenuItem
+                  onClick={() => signOut({ callbackUrl: "/login" })}
+                  className="gap-2 text-muted-foreground"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
                 </DropdownMenuItem>
 
               </DropdownMenuContent>
@@ -801,7 +830,7 @@ function ListRow({
 
         {/* Open in browser */}
         {app.port && (
-          <a href={`http://localhost:${app.port}`} target="_blank" rel="noopener noreferrer"
+          <a href={`${app.https ? 'https' : 'http'}://localhost:${app.port}`} target="_blank" rel="noopener noreferrer"
             className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title={`Open localhost:${app.port}`}>
             <ExternalLink className="h-3.5 w-3.5" />
           </a>

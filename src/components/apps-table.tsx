@@ -253,7 +253,7 @@ export function AppsTable({ apps }: AppsTableProps) {
                       </Badge>
                       {app.status === "running" && app.port && (
                         <a
-                          href={`http://localhost:${app.port}`}
+                          href={`${app.https ? 'https' : 'http'}://localhost:${app.port}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-muted-foreground hover:text-primary"

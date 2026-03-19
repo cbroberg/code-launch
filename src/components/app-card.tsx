@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   Play, Square, RotateCcw, Loader2,
   ExternalLink, Pencil, Trash2, Terminal, Rocket, Heart,
-  Hammer, Package, MoreHorizontal, Bot, FileText, Wrench, Copy, Check, Loader,
+  Hammer, Package, MoreHorizontal, Bot, FileText, Wrench, Copy, Check, Loader, FolderOpen,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -174,7 +174,7 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
         <div className="flex items-center gap-0.5">
           {app.port && (
             <a
-              href={`http://localhost:${app.port}`}
+              href={`${app.https ? 'https' : 'http'}://localhost:${app.port}`}
               target="_blank"
               rel="noopener noreferrer"
               className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
@@ -182,6 +182,13 @@ export function AppCard({ app, actionLoading, onProcessAction, onBuildAction, on
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
+          )}
+          {app.localPath && (
+            <CardAction
+              onClick={() => fetch(`/api/apps/${app.id}/open-folder`, { method: "POST" })}
+              title="Open in Finder"
+              icon={<FolderOpen className="h-3.5 w-3.5" />}
+            />
           )}
           <CardAction onClick={() => onShowLogs(app)} title="Logs" icon={<Terminal className="h-3.5 w-3.5" />} />
           <CardAction

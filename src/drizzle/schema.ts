@@ -6,6 +6,7 @@ export const apps = sqliteTable("apps", {
   githubName: text("github_name"),
   githubUrl: text("github_url"),
   port: integer("port").unique(),
+  https: integer("use_https", { mode: "boolean" }).default(false),
   localPath: text("local_path"),
   // Tech stack metadata
   packageManager: text("package_manager"), // "npm" | "pnpm" | "bun" | "yarn"
